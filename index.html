@@ -77,6 +77,10 @@ input[type=email],input[type=password],input[type=text]{min-height:48px;border:1
 .link{background:none;border:none;color:var(--accent-text);font-weight:600;font-size:14px;min-height:44px;text-align:left;padding:0}
 .own td{font-weight:700;background:var(--tint)}
 .left{text-align:left}
+table.lt{table-layout:fixed}
+table.lt td.nm,table.lt th.nm{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.lt td.cr{padding:4px 0}
+th .crest{display:block;margin:0 auto 2px}
 .joker{min-width:72px;padding:0 8px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
 .joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .joker:disabled{opacity:.4}
@@ -174,6 +178,8 @@ async function loadAll() {
   S.questions = questions.data;
   S.answers = answers.data;
   S.push = push.error ? null : push.data;
+  S.clubByName = {};
+  for (const m of matches.data) { if (m.home_bfv_club_id) S.clubByName[m.home_name] = m.home_bfv_club_id; if (m.guest_bfv_club_id) S.clubByName[m.guest_name] = m.guest_bfv_club_id; }
   S.weeks = [...new Set(S.matches.map((m) => weekKey(m.kickoff)))].sort();
   const now = new Date();
   const next = S.matches.find((m) => new Date(m.kickoff) > now);
@@ -258,7 +264,7 @@ function changeTip(matchId, side, delta) {
   if (!t) { t = { match_id: matchId, profile_id: S.session.user.id, home_goals: 0, guest_goals: 0, _new: true }; t[side] = Math.max(0, delta); S.tips.push(t); }
   else t[side] = Math.max(0, Math.min(20, t[side] + delta));
   S.saving[matchId] = 'offen';
-  render();
+  patchTip(matchId);
   clearTimeout(timers[matchId]);
   timers[matchId] = setTimeout(() => saveTip(matchId), 700);
 }
@@ -274,7 +280,7 @@ async function saveTip(matchId) {
   }
   S.saving[matchId] = res.error ? 'fehler' : 'ok';
   if (res.error) console.error(res.error);
-  render();
+  patchTip(matchId);
 }
 async function quickTip() {
   const todo = weekMatches(S.tipWeek).filter((m) => !started(m) && !m.void && !myTip(m.id));
@@ -303,13 +309,16 @@ function matchHead(m) {
   return `<div class="between"><div class="small muted"><div class="tag">${esc(team.label)} · ${m.is_home ? 'Heim' : 'Auswärts'}${isMine(m) ? ' · dein Team' : ''}</div><div>${esc(when(m.kickoff))}</div></div>${jk}</div>
   <div class="teams"><div>${crest(m.home_bfv_club_id)}<span>${esc(m.home_name)}</span></div><div><span>${esc(m.guest_name)}</span>${crest(m.guest_bfv_club_id)}</div></div>`;
 }
+const LT_COLS = '<colgroup><col style="width:30px"><col style="width:28px"><col><col style="width:32px"><col style="width:38px"><col style="width:34px"></colgroup>';
+const LT_HEAD = '<thead><tr><th>#</th><th></th><th class="nm">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead>';
+const ltRow = (r, cls) => `<tr class="${cls}"><td>${r.rank ?? r.position}</td><td class="cr">${crest(r.is_own ? S.club.bfv_club_id : S.clubByName[r.team_name], 'sm')}</td><td class="nm" title="${esc(r.team_name)}">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`;
 function miniTable(m) {
   const rows = S.tables.filter((r) => r.team_id === m.team_id);
   if (!rows.length) return '<div class="msg">Für diese Mannschaft liegt keine Tabelle vor.</div>';
   const opp = m.is_home ? m.guest_name : m.home_name;
-  const body = rows.map((r) => `<tr class="${r.is_own ? 'own' : r.team_name === opp ? 'opp' : ''}"><td>${r.rank ?? r.position}</td><td class="left">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`).join('');
+  const body = rows.map((r) => ltRow(r, r.is_own ? 'own' : r.team_name === opp ? 'opp' : '')).join('');
   const note = rows.some((r) => r.team_name === opp) ? '' : '<div class="small muted">Der Gegner steht nicht in dieser Tabelle (z. B. Pokalspiel).</div>';
-  return `<div class="mini"><table><thead><tr><th>#</th><th class="left">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${body}</tbody></table></div>${note}`;
+  return `<div class="mini"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>${body}</tbody></table></div>${note}`;
 }
 const tableToggle = (m) => `<button class="link" data-act="mini" data-id="${m.id}">${S.mini && S.mini[m.id] ? 'Tabelle ausblenden' : 'Tabelle anzeigen'}</button>${S.mini && S.mini[m.id] ? miniTable(m) : ''}`;
 function bonusCard(wk) {
@@ -318,7 +327,7 @@ function bonusCard(wk) {
   const allStarted = weekendMatches(wk).every(started), anyResolved = qs.some((x) => x.resolved);
   const line = (label, kind, val, pid) => { const x = q(kind); return x ? `<div><span>${label}</span><b>${esc(val)}</b><b style="width:26px;text-align:right">${x.resolved ? bonusPts(x, pid) : ''}</b></div>` : ''; };
   const block = (pid) => line('Siege', 'matchday_wins', String(tippedWins(pid, wk)), pid) + line('Höchster Sieg', 'biggest_win', topLabel(tippedTop(pid, wk, 1)), pid) + line('Höchste Niederlage', 'biggest_loss', topLabel(tippedTop(pid, wk, -1)), pid);
-  let html = `<div class="card" style="background:var(--tint)"><div class="small tag">Boni am Wochenende (Fr–So) · je 1 Punkt</div>
+  let html = `<div class="card" data-bonus style="background:var(--tint)"><div class="small tag">Boni am Wochenende (Fr–So) · je 1 Punkt</div>
     <div class="small muted">Ergeben sich automatisch aus deinen Tipps. Stimmt ein Wert am Ende, gibt es den Punkt.</div>
     <div class="list" style="background:var(--card)">${block(uid)}</div>`;
   if (anyResolved) {
@@ -331,12 +340,32 @@ function bonusCard(wk) {
   } else html += '<div class="small muted">Die Boni der anderen siehst du, sobald alle Wochenendspiele angepfiffen sind.</div>';
   return html + '</div>';
 }
+function tipNote(matchId) {
+  const st = S.saving[matchId], t = myTip(matchId);
+  return st === 'fehler' ? 'Nicht gespeichert – bitte nochmal versuchen' : st === 'offen' ? 'Speichert …' : t ? 'Gespeichert · alle Tipps sichtbar ab Anpfiff' : 'Noch nicht getippt';
+}
+function tipSub() {
+  const open = weekMatches(S.tipWeek).filter((m) => !started(m) && !m.void), tipped = open.filter((m) => myTip(m.id)).length;
+  return open.length ? `${tipped} von ${open.length} getippt · 🃏 = Joker, zählt doppelt (einer pro Spieltag)` : 'Alle Spiele dieses Spieltags sind angepfiffen';
+}
+// Aktualisiert nur die betroffene Spielkarte, die Zählung und die Boni – ohne die Seite neu aufzubauen
+function patchTip(matchId) {
+  const card = S.tab === 'tipp' && app.querySelector(`[data-card="${matchId}"]`);
+  if (!card) { render(); return; }
+  const t = myTip(matchId);
+  card.querySelector('[data-num="h"]').textContent = t ? t.home_goals : '–';
+  card.querySelector('[data-num="g"]').textContent = t ? t.guest_goals : '–';
+  card.querySelector('[data-note]').textContent = tipNote(matchId);
+  card.classList.toggle('todo', !t);
+  const jk = card.querySelector('.joker'); if (jk) jk.disabled = !(t && !t._new);
+  const sub = app.querySelector('[data-tipsub]'); if (sub) sub.textContent = tipSub();
+  const bonus = app.querySelector('[data-bonus]'); if (bonus) bonus.outerHTML = bonusCard(S.weeks[S.tipWeek]);
+}
 function viewTipp() {
   const ms = weekMatches(S.tipWeek);
   const open = ms.filter((m) => !started(m) && !m.void);
   const tipped = open.filter((m) => myTip(m.id)).length;
-  let sub = open.length ? `${tipped} von ${open.length} getippt · 🃏 = Joker, zählt doppelt (einer pro Spieltag)` : 'Alle Spiele dieses Spieltags sind angepfiffen';
-  let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted">${sub}</div></div>
+  let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted" data-tipsub>${tipSub()}</div></div>
     ${open.length && tipped < open.length ? '<button class="btn" data-act="quick">Schnelltipp</button>' : ''}</div>` + pager(S.tipWeek, 'tip', S.currentWeek);
   if (S.jokerMsg) html += `<div class="msg">${esc(S.jokerMsg)}</div>`;
   if (!ms.length) html += '<div class="msg">An diesem Spieltag gibt es keine Spiele.</div>';
@@ -346,18 +375,18 @@ function viewTipp() {
       html += `<div class="card">${matchHead(m)}<div class="msg">Keine Wertung (${esc(m.result_text || 'abgesetzt')})</div></div>`;
     } else if (!started(m)) {
       const st = S.saving[m.id];
-      const note = st === 'fehler' ? 'Nicht gespeichert – bitte nochmal versuchen' : st === 'offen' ? 'Speichert …' : t ? 'Gespeichert · alle Tipps sichtbar ab Anpfiff' : 'Noch nicht getippt';
-      html += `<div class="card ${t ? '' : 'todo'}">${matchHead(m)}
+      const note = tipNote(m.id);
+      html += `<div class="card ${t ? '' : 'todo'}" data-card="${m.id}">${matchHead(m)}
         <div class="stepper">
           <button data-act="tip" data-id="${m.id}" data-side="home_goals" data-d="-1" aria-label="Heimtor weniger">−</button>
-          <div class="num">${t ? t.home_goals : '–'}</div>
+          <div class="num" data-num="h">${t ? t.home_goals : '–'}</div>
           <button data-act="tip" data-id="${m.id}" data-side="home_goals" data-d="1" aria-label="Heimtor mehr">+</button>
           <div class="colon">:</div>
           <button data-act="tip" data-id="${m.id}" data-side="guest_goals" data-d="-1" aria-label="Gasttor weniger">−</button>
-          <div class="num">${t ? t.guest_goals : '–'}</div>
+          <div class="num" data-num="g">${t ? t.guest_goals : '–'}</div>
           <button data-act="tip" data-id="${m.id}" data-side="guest_goals" data-d="1" aria-label="Gasttor mehr">+</button>
         </div>
-        <div class="small muted" style="text-align:center">${note}</div>${tableToggle(m)}</div>`;
+        <div class="small muted" data-note style="text-align:center">${note}</div>${tableToggle(m)}</div>`;
     } else {
       const fin = isFinal(m);
       const res = fin ? `<div class="result">${m.home_goals}:${m.guest_goals}</div><div class="small muted" style="text-align:center">Endstand, offiziell bestätigt</div>`
@@ -476,7 +505,7 @@ function viewRank() {
   let head = '<th class="stick"><div class="between"><span>Trainer</span><span>Gesamt</span></div></th>';
   for (const m of ms) {
     const r = m.void ? 'o. W.' : isFinal(m) ? m.home_goals + ':' + m.guest_goals : started(m) ? '…' : '-:-';
-    head += `<th>${esc(S.teams[m.team_id].label)}<b>${r}</b></th>`;
+    head += `<th title="${esc(m.home_name + ' – ' + m.guest_name)}">${crest(m.is_home ? m.guest_bfv_club_id : m.home_bfv_club_id, 'sm')}${esc(S.teams[m.team_id].label)}<b>${r}</b></th>`;
   }
   const wq = weekQuestions(S.weeks[S.rankWeek]);
   if (wq.length) head += `<th>Boni<b>max. ${wq.reduce((a, q) => a + q.points, 0)}</b></th>`;
@@ -505,8 +534,7 @@ function viewLiga() {
   const team = S.teams[S.liga];
   let table = '<div class="msg">Für diese Mannschaft liegt noch keine Tabelle vor.</div>';
   if (rows.length) {
-    table = `<div class="scroll"><table><thead><tr><th>#</th><th class="left">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>` +
-      rows.map((r) => `<tr class="${r.is_own ? 'own' : ''}"><td>${r.rank ?? r.position}</td><td class="left">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`).join('') + '</tbody></table></div>';
+    table = `<div class="scroll"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>` + rows.map((r) => ltRow(r, r.is_own ? 'own' : '')).join('') + '</tbody></table></div>';
   }
   return `<div><h1>Ligatabellen</h1><div class="s13 muted">${esc(team ? team.competition_name || '' : '')}</div></div><div class="pills">${pills}</div>${table}`;
 }
