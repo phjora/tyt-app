@@ -77,12 +77,16 @@ input[type=email],input[type=password],input[type=text]{min-height:48px;border:1
 .link{background:none;border:none;color:var(--accent-text);font-weight:600;font-size:14px;min-height:44px;text-align:left;padding:0}
 .own td{font-weight:700;background:var(--tint)}
 .left{text-align:left}
-.joker{min-width:52px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
+.joker{min-width:72px;padding:0 8px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
 .joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .joker:disabled{opacity:.4}
 .bar{height:8px;border-radius:4px;background:var(--tint)}.bar>div{height:8px;border-radius:4px;background:var(--accent)}
 .statrow{display:flex;flex-direction:column;gap:4px}.statrow .between{font-size:13px;font-weight:500}
 nav button{font-size:11px}
+.mini{max-height:264px;overflow-y:auto;border:1px solid var(--line);border-radius:12px}
+.mini table{font-size:12px}.mini td,.mini th{padding:6px 6px}
+.mini tr.own td{background:var(--accent);color:#fff;font-weight:700}
+.mini tr.opp td{background:var(--tint);font-weight:700;box-shadow:inset 0 2px 0 var(--accent-text),inset 0 -2px 0 var(--accent-text)}
 </style>
 </head>
 <body>
@@ -181,12 +185,23 @@ async function loadAll() {
 const tipPts = (t, m) => points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) * (t.joker ? 2 : 1);
 const teamsOf = (pid) => S.pteams.filter((x) => x.profile_id === pid).map((x) => x.team_id);
 const isMine = (m) => teamsOf(S.session.user.id).includes(m.team_id);
-const monthOf = (iso) => berlinDay(iso).slice(0, 7);
+const isWeekend = (iso) => { const [y, mo, d] = berlinDay(iso).split('-').map(Number); return [5, 6, 0].includes(new Date(Date.UTC(y, mo - 1, d)).getUTCDay()); };
+const weekendMatches = (wk) => S.matches.filter((m) => weekKey(m.kickoff) === wk && isWeekend(m.kickoff) && !m.void);
+function tippedWins(pid, wk) {
+  const ids = new Set(weekendMatches(wk).map((m) => m.id)); const byId = Object.fromEntries(S.matches.map((m) => [m.id, m]));
+  return S.tips.filter((t) => t.profile_id === pid && ids.has(t.match_id) && (t.home_goals - t.guest_goals) * (byId[t.match_id].is_home ? 1 : -1) > 0).length;
+}
+const weekQuestions = (wk) => S.questions.filter((q) => q.scope === 'matchday' && q.matchday === wk);
+function bonusPts(q, pid) {
+  if (!q.resolved) return 0;
+  if (q.kind === 'matchday_wins') return q.correct_number != null && tippedWins(pid, q.matchday) === Number(q.correct_number) ? q.points : 0;
+  return answerPts(q, answerOf(q.id, pid));
+}
 const answerOf = (qid, pid) => S.answers.find((a) => a.question_id === qid && a.profile_id === pid);
 const qClosed = (q) => new Date(q.deadline) <= new Date();
 function answerPts(q, a) {
   if (!q.resolved || !a) return 0;
-  if (q.answer_type === 'team') return a.team_id && a.team_id === q.correct_team_id ? q.points : 0;
+  if (q.answer_type === 'team') return a.team_id && ((q.correct_team_ids || []).includes(a.team_id) || a.team_id === q.correct_team_id) ? q.points : 0;
   return a.number != null && q.correct_number != null && Number(a.number) === Number(q.correct_number) ? q.points : 0;
 }
 async function saveAnswer(q, values) {
@@ -205,13 +220,13 @@ async function toggleJoker(matchId) {
   if (!t || t._new) return;
   S.jokerMsg = '';
   if (t.joker) { t.joker = false; await sb.from('tips').update({ joker: false }).eq('id', t.id); render(); return; }
-  const other = S.tips.find((x) => x.profile_id === t.profile_id && x.joker && byId[x.match_id] && monthOf(byId[x.match_id].kickoff) === monthOf(m.kickoff));
+  const other = S.tips.find((x) => x.profile_id === t.profile_id && x.joker && byId[x.match_id] && weekKey(byId[x.match_id].kickoff) === weekKey(m.kickoff));
   if (other) {
-    if (started(byId[other.match_id])) { S.jokerMsg = 'Dein Joker für diesen Monat ist schon verbraucht.'; render(); return; }
+    if (started(byId[other.match_id])) { S.jokerMsg = 'Dein Joker für diesen Spieltag ist schon verbraucht.'; render(); return; }
     other.joker = false; await sb.from('tips').update({ joker: false }).eq('id', other.id);
   }
   const res = await sb.from('tips').update({ joker: true }).eq('id', t.id);
-  if (res.error) S.jokerMsg = 'Dein Joker für diesen Monat ist schon verbraucht.'; else t.joker = true;
+  if (res.error) S.jokerMsg = 'Dein Joker für diesen Spieltag ist schon verbraucht.'; else t.joker = true;
   render();
 }
 const myTip = (matchId) => S.tips.find((t) => t.match_id === matchId && t.profile_id === S.session.user.id);
@@ -263,21 +278,54 @@ function pager(idx, name, current) {
 function matchHead(m) {
   const team = S.teams[m.team_id];
   const t = myTip(m.id);
-  const jk = !started(m) && !m.void ? `<button class="joker ${t && t.joker ? 'on' : ''}" data-act="joker" data-id="${m.id}" ${t && !t._new ? '' : 'disabled'} aria-label="Joker: Punkte zählen doppelt">×2</button>`
-    : (t && t.joker ? '<span class="joker on" style="display:flex;align-items:center;justify-content:center">×2</span>' : '');
+  const jk = !started(m) && !m.void ? `<button class="joker ${t && t.joker ? 'on' : ''}" data-act="joker" data-id="${m.id}" ${t && !t._new ? '' : 'disabled'} aria-label="Joker: Punkte zählen doppelt">🃏 2x</button>`
+    : (t && t.joker ? '<span class="joker on" style="display:flex;align-items:center;justify-content:center">🃏 2x</span>' : '');
   return `<div class="between"><div class="small muted"><div class="tag">${esc(team.label)} · ${m.is_home ? 'Heim' : 'Auswärts'}${isMine(m) ? ' · dein Team' : ''}</div><div>${esc(when(m.kickoff))}</div></div>${jk}</div>
   <div class="teams"><div>${crest(m.home_bfv_club_id)}<span>${esc(m.home_name)}</span></div><div><span>${esc(m.guest_name)}</span>${crest(m.guest_bfv_club_id)}</div></div>`;
+}
+function miniTable(m) {
+  const rows = S.tables.filter((r) => r.team_id === m.team_id);
+  if (!rows.length) return '<div class="msg">Für diese Mannschaft liegt keine Tabelle vor.</div>';
+  const opp = m.is_home ? m.guest_name : m.home_name;
+  const body = rows.map((r) => `<tr class="${r.is_own ? 'own' : r.team_name === opp ? 'opp' : ''}"><td>${r.rank ?? r.position}</td><td class="left">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`).join('');
+  const note = rows.some((r) => r.team_name === opp) ? '' : '<div class="small muted">Der Gegner steht nicht in dieser Tabelle (z. B. Pokalspiel).</div>';
+  return `<div class="mini"><table><thead><tr><th>#</th><th class="left">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>${body}</tbody></table></div>${note}`;
+}
+const tableToggle = (m) => `<button class="link" data-act="mini" data-id="${m.id}">${S.mini && S.mini[m.id] ? 'Tabelle ausblenden' : 'Tabelle anzeigen'}</button>${S.mini && S.mini[m.id] ? miniTable(m) : ''}`;
+function bonusCard(wk) {
+  const qs = weekQuestions(wk); if (!qs.length) return '';
+  const uid = S.session.user.id, winsQ = qs.find((q) => q.kind === 'matchday_wins');
+  const playing = [...new Set(weekendMatches(wk).map((m) => m.team_id))];
+  let html = `<div class="card"><div class="small tag">Boni am Wochenende (Fr–So) · je 1 Punkt</div>`;
+  for (const q of qs.filter((x) => x.answer_type === 'team')) {
+    const a = answerOf(q.id, uid);
+    if (!qClosed(q)) {
+      html += `<b class="s13">${esc(q.title)}</b><div class="pills">${S.teamList.filter((tm) => playing.includes(tm.id)).map((tm) => `<button data-act="ans-team" data-id="${q.id}" data-team="${tm.id}" class="${a && a.team_id === tm.id ? 'on' : ''}">${esc(tm.label)}</button>`).join('')}</div>`;
+    } else {
+      const sol = q.resolved ? ((q.correct_team_ids || []).map((id) => (S.teams[id] || {}).label).filter(Boolean).join(', ') || 'niemand') : 'offen';
+      const rows = S.profiles.map((pr) => { const x = answerOf(q.id, pr.id); return `<div><span>${esc(pr.display_name)}</span><b>${esc(x ? (S.teams[x.team_id] || {}).label || '–' : '–')}</b><b style="width:26px;text-align:right">${q.resolved ? bonusPts(q, pr.id) : ''}</b></div>`; }).join('');
+      html += `<b class="s13">${esc(q.title)}</b><div class="small muted">Lösung: ${esc(sol)}</div><div class="list">${rows}</div>`;
+    }
+  }
+  if (winsQ) {
+    if (!qClosed(winsQ)) html += `<div class="msg"><b>Sieg-Bonus:</b> Du hast ${tippedWins(uid, wk)} Siege für ${esc(S.club.short_name || 'den Verein')} getippt. Stimmt diese Zahl am Ende, gibt es 1 Punkt. Sie ergibt sich automatisch aus deinen Tipps.</div>`;
+    else {
+      const rows = S.profiles.map((pr) => `<div><span>${esc(pr.display_name)}</span><b>${tippedWins(pr.id, wk)}</b><b style="width:26px;text-align:right">${winsQ.resolved ? bonusPts(winsQ, pr.id) : ''}</b></div>`).join('');
+      html += `<b class="s13">Sieg-Bonus: getippte Siege</b><div class="small muted">${winsQ.resolved ? 'Tatsächlich: ' + Number(winsQ.correct_number) : 'Auflösung folgt automatisch'}</div><div class="list">${rows}</div>`;
+    }
+  }
+  if (S.bonusMsg) html += `<div class="msg">${esc(S.bonusMsg)}</div>`;
+  return html + '</div>';
 }
 function viewTipp() {
   const ms = weekMatches(S.tipWeek);
   const open = ms.filter((m) => !started(m) && !m.void);
   const tipped = open.filter((m) => myTip(m.id)).length;
-  let sub = open.length ? `${tipped} von ${open.length} getippt · ×2 = Joker (einer pro Monat)` : 'Alle Spiele dieses Spieltags sind angepfiffen';
+  let sub = open.length ? `${tipped} von ${open.length} getippt · 🃏 = Joker, zählt doppelt (einer pro Spieltag)` : 'Alle Spiele dieses Spieltags sind angepfiffen';
   let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted">${sub}</div></div>
     ${open.length && tipped < open.length ? '<button class="btn" data-act="quick">Schnelltipp</button>' : ''}</div>` + pager(S.tipWeek, 'tip', S.currentWeek);
   if (S.jokerMsg) html += `<div class="msg">${esc(S.jokerMsg)}</div>`;
-  const dq = S.questions.find((q) => q.scope === 'matchday' && q.matchday === S.weeks[S.tipWeek]);
-  if (dq) html += questionCard(dq, 'Frage des Spieltags');
+  html += bonusCard(S.weeks[S.tipWeek]);
   if (!ms.length) html += '<div class="msg">An diesem Spieltag gibt es keine Spiele.</div>';
   for (const m of ms) {
     const t = myTip(m.id);
@@ -296,7 +344,7 @@ function viewTipp() {
           <div class="num">${t ? t.guest_goals : '–'}</div>
           <button data-act="tip" data-id="${m.id}" data-side="guest_goals" data-d="1" aria-label="Gasttor mehr">+</button>
         </div>
-        <div class="small muted" style="text-align:center">${note}</div></div>`;
+        <div class="small muted" style="text-align:center">${note}</div>${tableToggle(m)}</div>`;
     } else {
       const fin = isFinal(m);
       const res = fin ? `<div class="result">${m.home_goals}:${m.guest_goals}</div><div class="small muted" style="text-align:center">Endstand, offiziell bestätigt</div>`
@@ -306,12 +354,12 @@ function viewTipp() {
       if (S.open[m.id]) {
         const rows = S.profiles.map((p) => {
           const pt = S.tips.find((x) => x.match_id === m.id && x.profile_id === p.id);
-          return `<div><span>${esc(p.display_name)}</span><b>${pt ? pt.home_goals + ':' + pt.guest_goals : '–'}</b><b style="width:40px;text-align:right">${pt && fin ? tipPts(pt, m) + (pt.joker ? ' ×2' : '') : (pt && pt.joker ? '×2' : '')}</b></div>`;
+          return `<div><span>${esc(p.display_name)}</span><b>${pt ? pt.home_goals + ':' + pt.guest_goals : '–'}</b><b style="width:40px;text-align:right">${pt && fin ? (pt.joker ? '🃏 ' : '') + tipPts(pt, m) : (pt && pt.joker ? '🃏' : '')}</b></div>`;
         }).join('');
         all = `<div class="list">${rows}</div>`;
       }
       html += `<div class="card">${matchHead(m)}${res}
-        <div class="between"><div class="s13">${mine}</div><button class="btn ghost" data-act="all" data-id="${m.id}">${S.open[m.id] ? 'Schließen' : 'Alle Tipps'}</button></div>${all}</div>`;
+        <div class="between"><div class="s13">${mine}</div><button class="btn ghost" data-act="all" data-id="${m.id}">${S.open[m.id] ? 'Schließen' : 'Alle Tipps'}</button></div>${all}${tableToggle(m)}</div>`;
     }
   }
   return html;
@@ -400,10 +448,10 @@ function standings(uptoWeek) {
     r.total += p; if (wk === limit) r.day += p;
   }
   for (const q of S.questions) {
-    if (!q.resolved) continue;
+    if (!q.resolved || q.scope !== 'matchday') continue;
     const wk = q.scope === 'matchday' ? q.matchday : weekKey(q.deadline);
     if (wk > limit) continue;
-    for (const r of rows) { const p = answerPts(q, answerOf(q.id, r.id)); r.total += p; if (wk === limit) r.day += p; }
+    for (const r of rows) { const p = q.scope === 'matchday' ? bonusPts(q, r.id) : answerPts(q, answerOf(q.id, r.id)); r.total += p; if (wk === limit) r.day += p; }
   }
   rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   return rows;
@@ -416,8 +464,8 @@ function viewRank() {
     const r = m.void ? 'o. W.' : isFinal(m) ? m.home_goals + ':' + m.guest_goals : started(m) ? '…' : '-:-';
     head += `<th>${esc(S.teams[m.team_id].label)}<b>${r}</b></th>`;
   }
-  const dq = S.questions.find((q) => q.scope === 'matchday' && q.matchday === S.weeks[S.rankWeek]);
-  if (dq) head += `<th>Frage<b>${dq.resolved ? Number(dq.correct_number) : '?'}</b></th>`;
+  const wq = weekQuestions(S.weeks[S.rankWeek]);
+  if (wq.length) head += `<th>Boni<b>max. ${wq.reduce((a, q) => a + q.points, 0)}</b></th>`;
   let body = '';
   rows.forEach((r, i) => {
     let cells = '';
@@ -425,17 +473,17 @@ function viewRank() {
       const t = S.tips.find((x) => x.match_id === m.id && x.profile_id === r.id);
       if (!t) { cells += `<td class="muted">${started(m) ? '–' : (r.id === S.session.user.id ? '–' : '?')}</td>`; continue; }
       const p = isFinal(m) ? tipPts(t, m) : null;
-      cells += `<td>${t.home_goals}:${t.guest_goals}${t.joker ? ' <span class="small tag">×2</span>' : ''}${p == null ? '' : `<br><span class="pts p${Math.min(4, p)}">${p}</span>`}</td>`;
+      cells += `<td>${t.home_goals}:${t.guest_goals}${p == null ? (t.joker ? '<br>🃏' : '') : `<br>${t.joker ? '🃏' : ''}<span class="pts p${Math.min(4, p)}">${p}</span>`}</td>`;
     }
-    if (dq) {
-      const a = answerOf(dq.id, r.id);
-      cells += `<td>${a && a.number != null ? Number(a.number) : (qClosed(dq) ? '–' : '?')}${dq.resolved ? `<br><span class="pts p${answerPts(dq, a) ? 4 : 0}">${answerPts(dq, a)}</span>` : ''}</td>`;
+    if (wq.length) {
+      const done = wq.filter((q) => q.resolved), sum = done.reduce((a, q) => a + bonusPts(q, r.id), 0);
+      cells += `<td>${done.length ? `<span class="pts p${sum ? 4 : 0}">${sum}</span>` : '…'}</td>`;
     }
     body += `<tr class="${r.id === S.session.user.id ? 'me' : ''}"><td class="stick" ${r.id === S.session.user.id ? 'style="background:var(--tint)"' : ''}><div class="who"><span>${i + 1}</span><span class="name">${esc(r.name)}</span><span class="tot"><b>${r.total}</b><span class="small muted">+${r.day}</span></span></div></td>${cells}</tr>`;
   });
   return `<div><h1>Tipptabelle</h1><div class="s13 muted">Tipps und Punkte je Spiel · fremde Tipps ab Anpfiff</div></div>` + pager(S.rankWeek, 'rank', S.currentWeek) +
     `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz, mit Joker doppelt. Dazu kommen Bonusfragen. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
+    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz. 🃏 = Joker, die Punkte dieses Spiels zählen doppelt. Dazu kommen bis zu 3 Bonuspunkte pro Spieltag. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
 }
 function viewLiga() {
   const pills = S.teamList.map((t) => `<button data-act="liga" data-id="${t.id}" class="${t.id === S.liga ? 'on' : ''}">${esc(t.label)}</button>`).join('');
@@ -492,7 +540,7 @@ function render() {
   else if (!S.profile || !S.profile.club_id) body = '<div class="msg">Dein Konto ist noch keinem Verein zugeordnet. Melde dich bei deinem Vereins-Admin.</div><button class="btn ghost" data-act="logout">Abmelden</button>';
   else body = (nameMissing() && S.tab !== 'set' ? nameCard() : '') + { tipp: viewTipp, rank: viewRank, bonus: viewBonus, stats: viewStats, liga: viewLiga, set: viewSettings }[S.tab]();
   const showNav = authed && S.profile && S.profile.club_id && !S.loadError;
-  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['bonus', 'Bonus'], ['stats', 'Statistik'], ['liga', 'Ligen'], ['set', 'Mehr']];
+  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['stats', 'Statistik'], ['liga', 'Ligen'], ['set', 'Mehr']];  // Saisonfragen (Reiter 'bonus') sind vorerst ausgeblendet
   app.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
     <main>${body}</main>` + (showNav ? `<nav><div class="inner">${tabs.map((t) => `<button data-act="tab" data-id="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('')}</div></nav>` : '');
   window.scrollTo(0, keepScroll);
@@ -507,6 +555,7 @@ app.addEventListener('click', async (e) => {
   else if (a === 'tip') changeTip(id, b.dataset.side, Number(b.dataset.d));
   else if (a === 'quick') quickTip();
   else if (a === 'joker') toggleJoker(id);
+  else if (a === 'mini') { S.mini = S.mini || {}; S.mini[id] = !S.mini[id]; render(); }
   else if (a === 'ans-num') {
     const q = S.questions.find((x) => x.id === id), cur = answerOf(id, S.session.user.id);
     const n = cur && cur.number != null ? Math.max(0, Math.min(99, Number(cur.number) + Number(b.dataset.d))) : (q.kind === 'final_position' ? 1 : 0);
