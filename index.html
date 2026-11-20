@@ -77,6 +77,12 @@ input[type=email],input[type=password],input[type=text]{min-height:48px;border:1
 .link{background:none;border:none;color:var(--accent-text);font-weight:600;font-size:14px;min-height:44px;text-align:left;padding:0}
 .own td{font-weight:700;background:var(--tint)}
 .left{text-align:left}
+.joker{min-width:52px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
+.joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.joker:disabled{opacity:.4}
+.bar{height:8px;border-radius:4px;background:var(--tint)}.bar>div{height:8px;border-radius:4px;background:var(--accent)}
+.statrow{display:flex;flex-direction:column;gap:4px}.statrow .between{font-size:13px;font-weight:500}
+nav button{font-size:11px}
 </style>
 </head>
 <body>
@@ -137,7 +143,7 @@ async function loadAll() {
   const { data: profile } = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
   S.profile = profile;
   if (!profile || !profile.club_id) return;
-  const [club, teams, matches, logos, tips, profiles, tables] = await Promise.all([
+  const [club, teams, matches, logos, tips, profiles, tables, pteams, questions, answers] = await Promise.all([
     sb.from('clubs').select('*').eq('id', profile.club_id).maybeSingle(),
     sb.from('teams').select('*').order('sort_order'),
     sb.from('matches').select('*').eq('counts', true).order('kickoff').limit(2000),
@@ -145,8 +151,11 @@ async function loadAll() {
     sb.from('tips').select('*').limit(20000),
     sb.from('profiles').select('id,display_name'),
     sb.from('league_tables').select('*').order('position').limit(5000),
+    sb.from('profile_teams').select('*').limit(5000),
+    sb.from('bonus_questions').select('*').order('deadline').limit(2000),
+    sb.from('bonus_answers').select('*').limit(20000),
   ]);
-  const err = [club, teams, matches, logos, tips, profiles, tables].find((r) => r.error);
+  const err = [club, teams, matches, logos, tips, profiles, tables, pteams, questions, answers].find((r) => r.error);
   if (err) { S.loadError = err.error.message; return; }
   S.club = club.data;
   S.teams = Object.fromEntries(teams.data.map((t) => [t.id, t]));
@@ -156,6 +165,9 @@ async function loadAll() {
   S.tips = tips.data;
   S.profiles = profiles.data;
   S.tables = tables.data;
+  S.pteams = pteams.data;
+  S.questions = questions.data;
+  S.answers = answers.data;
   S.weeks = [...new Set(S.matches.map((m) => weekKey(m.kickoff)))].sort();
   const now = new Date();
   const next = S.matches.find((m) => new Date(m.kickoff) > now);
@@ -165,6 +177,42 @@ async function loadAll() {
   S.rankWeek = lastStarted ? S.weeks.indexOf(weekKey(lastStarted.kickoff)) : S.currentWeek;
   S.liga = S.teamList[0] && S.teamList[0].id;
   applyClubColor();
+}
+const tipPts = (t, m) => points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) * (t.joker ? 2 : 1);
+const teamsOf = (pid) => S.pteams.filter((x) => x.profile_id === pid).map((x) => x.team_id);
+const isMine = (m) => teamsOf(S.session.user.id).includes(m.team_id);
+const monthOf = (iso) => berlinDay(iso).slice(0, 7);
+const answerOf = (qid, pid) => S.answers.find((a) => a.question_id === qid && a.profile_id === pid);
+const qClosed = (q) => new Date(q.deadline) <= new Date();
+function answerPts(q, a) {
+  if (!q.resolved || !a) return 0;
+  if (q.answer_type === 'team') return a.team_id && a.team_id === q.correct_team_id ? q.points : 0;
+  return a.number != null && q.correct_number != null && Number(a.number) === Number(q.correct_number) ? q.points : 0;
+}
+async function saveAnswer(q, values) {
+  const uid = S.session.user.id;
+  let a = answerOf(q.id, uid), res;
+  if (a) { Object.assign(a, values); res = await sb.from('bonus_answers').update(values).eq('id', a.id); }
+  else {
+    res = await sb.from('bonus_answers').insert(Object.assign({ question_id: q.id, profile_id: uid }, values)).select().single();
+    if (!res.error) S.answers.push(res.data);
+  }
+  S.bonusMsg = res.error ? 'Speichern hat nicht geklappt.' : '';
+  render();
+}
+async function toggleJoker(matchId) {
+  const t = myTip(matchId); const byId = Object.fromEntries(S.matches.map((m) => [m.id, m])); const m = byId[matchId];
+  if (!t || t._new) return;
+  S.jokerMsg = '';
+  if (t.joker) { t.joker = false; await sb.from('tips').update({ joker: false }).eq('id', t.id); render(); return; }
+  const other = S.tips.find((x) => x.profile_id === t.profile_id && x.joker && byId[x.match_id] && monthOf(byId[x.match_id].kickoff) === monthOf(m.kickoff));
+  if (other) {
+    if (started(byId[other.match_id])) { S.jokerMsg = 'Dein Joker für diesen Monat ist schon verbraucht.'; render(); return; }
+    other.joker = false; await sb.from('tips').update({ joker: false }).eq('id', other.id);
+  }
+  const res = await sb.from('tips').update({ joker: true }).eq('id', t.id);
+  if (res.error) S.jokerMsg = 'Dein Joker für diesen Monat ist schon verbraucht.'; else t.joker = true;
+  render();
 }
 const myTip = (matchId) => S.tips.find((t) => t.match_id === matchId && t.profile_id === S.session.user.id);
 const weekMatches = (i) => S.matches.filter((m) => weekKey(m.kickoff) === S.weeks[i]);
@@ -214,16 +262,22 @@ function pager(idx, name, current) {
 }
 function matchHead(m) {
   const team = S.teams[m.team_id];
-  return `<div class="small muted"><div class="tag">${esc(team.label)} · ${m.is_home ? 'Heim' : 'Auswärts'}</div><div>${esc(when(m.kickoff))}</div></div>
+  const t = myTip(m.id);
+  const jk = !started(m) && !m.void ? `<button class="joker ${t && t.joker ? 'on' : ''}" data-act="joker" data-id="${m.id}" ${t && !t._new ? '' : 'disabled'} aria-label="Joker: Punkte zählen doppelt">×2</button>`
+    : (t && t.joker ? '<span class="joker on" style="display:flex;align-items:center;justify-content:center">×2</span>' : '');
+  return `<div class="between"><div class="small muted"><div class="tag">${esc(team.label)} · ${m.is_home ? 'Heim' : 'Auswärts'}${isMine(m) ? ' · dein Team' : ''}</div><div>${esc(when(m.kickoff))}</div></div>${jk}</div>
   <div class="teams"><div>${crest(m.home_bfv_club_id)}<span>${esc(m.home_name)}</span></div><div><span>${esc(m.guest_name)}</span>${crest(m.guest_bfv_club_id)}</div></div>`;
 }
 function viewTipp() {
   const ms = weekMatches(S.tipWeek);
   const open = ms.filter((m) => !started(m) && !m.void);
   const tipped = open.filter((m) => myTip(m.id)).length;
-  let sub = open.length ? `${tipped} von ${open.length} getippt` : 'Alle Spiele dieses Spieltags sind angepfiffen';
+  let sub = open.length ? `${tipped} von ${open.length} getippt · ×2 = Joker (einer pro Monat)` : 'Alle Spiele dieses Spieltags sind angepfiffen';
   let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted">${sub}</div></div>
     ${open.length && tipped < open.length ? '<button class="btn" data-act="quick">Schnelltipp</button>' : ''}</div>` + pager(S.tipWeek, 'tip', S.currentWeek);
+  if (S.jokerMsg) html += `<div class="msg">${esc(S.jokerMsg)}</div>`;
+  const dq = S.questions.find((q) => q.scope === 'matchday' && q.matchday === S.weeks[S.tipWeek]);
+  if (dq) html += questionCard(dq, 'Frage des Spieltags');
   if (!ms.length) html += '<div class="msg">An diesem Spieltag gibt es keine Spiele.</div>';
   for (const m of ms) {
     const t = myTip(m.id);
@@ -247,12 +301,12 @@ function viewTipp() {
       const fin = isFinal(m);
       const res = fin ? `<div class="result">${m.home_goals}:${m.guest_goals}</div><div class="small muted" style="text-align:center">Endstand, offiziell bestätigt</div>`
         : `<div class="msg">${m.result_text ? 'Ergebnis ' + esc(m.result_text) + ' – noch nicht bestätigt' : 'Angepfiffen – Ergebnis folgt nach offizieller Bestätigung'}</div>`;
-      const mine = t ? `Dein Tipp <b>${t.home_goals}:${t.guest_goals}</b>${fin ? ' · ' + points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) + ' Punkte' : ''}` : 'Kein Tipp abgegeben';
+      const mine = t ? `Dein Tipp <b>${t.home_goals}:${t.guest_goals}</b>${fin ? ' · ' + tipPts(t, m) + ' Punkte' : ''}` : 'Kein Tipp abgegeben';
       let all = '';
       if (S.open[m.id]) {
         const rows = S.profiles.map((p) => {
           const pt = S.tips.find((x) => x.match_id === m.id && x.profile_id === p.id);
-          return `<div><span>${esc(p.display_name)}</span><b>${pt ? pt.home_goals + ':' + pt.guest_goals : '–'}</b><b style="width:26px;text-align:right">${pt && fin ? points(pt.home_goals, pt.guest_goals, m.home_goals, m.guest_goals) : ''}</b></div>`;
+          return `<div><span>${esc(p.display_name)}</span><b>${pt ? pt.home_goals + ':' + pt.guest_goals : '–'}</b><b style="width:40px;text-align:right">${pt && fin ? tipPts(pt, m) + (pt.joker ? ' ×2' : '') : (pt && pt.joker ? '×2' : '')}</b></div>`;
         }).join('');
         all = `<div class="list">${rows}</div>`;
       }
@@ -261,6 +315,76 @@ function viewTipp() {
     }
   }
   return html;
+}
+function questionCard(q, label) {
+  const uid = S.session.user.id, a = answerOf(q.id, uid), closed = qClosed(q);
+  let input = '', info = '';
+  if (!closed) {
+    if (q.answer_type === 'number') {
+      input = `<div class="stepper"><button data-act="ans-num" data-id="${q.id}" data-d="-1" aria-label="weniger">−</button><div class="num">${a && a.number != null ? Number(a.number) : '–'}</div><button data-act="ans-num" data-id="${q.id}" data-d="1" aria-label="mehr">+</button></div>`;
+    } else {
+      input = `<div class="pills">${S.teamList.map((t) => `<button data-act="ans-team" data-id="${q.id}" data-team="${t.id}" class="${a && a.team_id === t.id ? 'on' : ''}">${esc(t.label)}</button>`).join('')}</div>`;
+    }
+    info = `Offen bis ${esc(when(q.deadline))} · ${q.points} Punkte`;
+  } else {
+    const show = (x) => !x ? '–' : q.answer_type === 'team' ? esc((S.teams[x.team_id] || {}).label || '–') : (x.number != null ? Number(x.number) : '–');
+    const rows = S.profiles.map((p) => { const x = answerOf(q.id, p.id); return `<div><span>${esc(p.display_name)}</span><b>${show(x)}</b><b style="width:26px;text-align:right">${q.resolved ? answerPts(q, x) : ''}</b></div>`; }).join('');
+    const sol = q.resolved ? 'Lösung: ' + (q.answer_type === 'team' ? esc((S.teams[q.correct_team_id] || {}).label || '–') : Number(q.correct_number)) : 'Auflösung folgt automatisch';
+    input = `<div class="list">${rows}</div>`;
+    info = `${sol} · ${q.points} Punkte`;
+  }
+  return `<div class="card"><div class="small tag">${esc(label)}</div><b>${esc(q.title)}</b>${input}<div class="small muted">${info}</div></div>`;
+}
+function viewBonus() {
+  const qs = S.questions.filter((q) => q.scope === 'season');
+  let html = `<div><h1>Bonusfragen</h1><div class="s13 muted">Saisonfragen zur Rückrunde. Die Antworten der anderen siehst du nach dem Tippschluss.</div></div>`;
+  if (S.bonusMsg) html += `<div class="msg">${esc(S.bonusMsg)}</div>`;
+  if (!qs.length) html += '<div class="msg">Im Moment gibt es keine offenen Saisonfragen.</div>';
+  html += qs.map((q) => questionCard(q, 'Saisonfrage')).join('');
+  return html;
+}
+function statCard(title, sub, rows) {
+  const body = rows.length ? rows.map((r) => `<div class="statrow"><div class="between"><span>${esc(r.name)}</span><span>${esc(r.val)}</span></div><div class="bar"><div style="width:${Math.max(0, Math.min(100, r.w))}%"></div></div></div>`).join('')
+    : '<div class="small muted">Noch nicht genug Daten.</div>';
+  return `<div class="card"><div><b>${esc(title)}</b><div class="small muted">${esc(sub)}</div></div>${body}</div>`;
+}
+function viewStats() {
+  const byId = Object.fromEntries(S.matches.map((m) => [m.id, m]));
+  const st = Object.fromEntries(S.profiles.map((p) => [p.id, { name: p.display_name, own: 0, against: 0, all: 0, clubWin: 0, ownPts: 0, ownN: 0, othPts: 0, othN: 0, pts: 0, swarm: 0 }]));
+  const perMatch = {};
+  for (const t of S.tips) {
+    const m = byId[t.match_id], s = st[t.profile_id];
+    if (!m || !s || !started(m) || m.void) continue;
+    const diff = (t.home_goals - t.guest_goals) * (m.is_home ? 1 : -1);
+    const mine = teamsOf(t.profile_id).includes(m.team_id);
+    s.all++; if (diff > 0) s.clubWin++;
+    if (mine) { s.own++; if (diff < 0) s.against++; }
+    if (isFinal(m)) {
+      const p = points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals);
+      if (mine) { s.ownPts += p; s.ownN++; } else { s.othPts += p; s.othN++; }
+      (perMatch[m.id] = perMatch[m.id] || []).push({ pid: t.profile_id, t, p });
+    }
+  }
+  for (const id in perMatch) {
+    const list = perMatch[id], m = byId[id];
+    if (list.length < 2) continue;
+    const avg = (k) => Math.round(list.reduce((a, x) => a + x.t[k], 0) / list.length);
+    const sp = points(avg('home_goals'), avg('guest_goals'), m.home_goals, m.guest_goals);
+    for (const x of list) { st[x.pid].pts += x.p; st[x.pid].swarm += sp; }
+  }
+  const L = Object.values(st);
+  const pct = (a, b) => Math.round((a / b) * 100);
+  const verr = L.filter((s) => s.own > 0).map((s) => ({ name: s.name, val: pct(s.against, s.own) + ' % (' + s.against + ' von ' + s.own + ')', w: pct(s.against, s.own) })).sort((a, b) => b.w - a.w);
+  const brille = L.filter((s) => s.all > 0).map((s) => ({ name: s.name, val: pct(s.clubWin, s.all) + ' %', w: pct(s.clubWin, s.all) })).sort((a, b) => b.w - a.w);
+  const selbst = L.filter((s) => s.ownN > 0).map((s) => ({ name: s.name, val: (s.ownPts / s.ownN).toFixed(1).replace('.', ',') + ' eigenes Team · ' + (s.othN ? (s.othPts / s.othN).toFixed(1).replace('.', ',') : '–') + ' sonst', w: (s.ownPts / s.ownN) * 25 })).sort((a, b) => b.w - a.w);
+  const maxAbs = Math.max(1, ...L.map((s) => Math.abs(s.pts - s.swarm)));
+  const schwarm = L.filter((s) => s.pts || s.swarm).map((s) => ({ name: s.name, val: (s.pts - s.swarm >= 0 ? '+' : '') + (s.pts - s.swarm) + ' Punkte', w: 50 + ((s.pts - s.swarm) / maxAbs) * 50 })).sort((a, b) => b.w - a.w);
+  const hint = teamsOf(S.session.user.id).length ? '' : '<div class="msg">Trag unter „Mehr“ deine Mannschaften ein, dann tauchst du auch bei Verräter-Quote und Selbsterkenntnis auf.</div>';
+  return `<div><h1>Statistiken</h1><div class="s13 muted">Wer tippt wie? Gezählt werden angepfiffene Spiele.</div></div>${hint}` +
+    statCard('Verräter-Quote', 'Tipps gegen das eigene Team', verr) +
+    statCard('Vereinsbrille', 'Anteil der Tipps auf einen Sieg des eigenen Vereins', brille) +
+    statCard('Selbsterkenntnis', 'Punkte pro Spiel: eigenes Team gegen alle anderen', selbst) +
+    statCard('Schlauer als der Schwarm', 'Punkte Vorsprung auf den Durchschnittstipp aller', schwarm);
 }
 function standings(uptoWeek) {
   const limit = S.weeks[uptoWeek];
@@ -272,8 +396,14 @@ function standings(uptoWeek) {
     if (!m || !r || !isFinal(m)) continue;
     const wk = weekKey(m.kickoff);
     if (wk > limit) continue;
-    const p = points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals);
+    const p = tipPts(t, m);
     r.total += p; if (wk === limit) r.day += p;
+  }
+  for (const q of S.questions) {
+    if (!q.resolved) continue;
+    const wk = q.scope === 'matchday' ? q.matchday : weekKey(q.deadline);
+    if (wk > limit) continue;
+    for (const r of rows) { const p = answerPts(q, answerOf(q.id, r.id)); r.total += p; if (wk === limit) r.day += p; }
   }
   rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   return rows;
@@ -286,20 +416,26 @@ function viewRank() {
     const r = m.void ? 'o. W.' : isFinal(m) ? m.home_goals + ':' + m.guest_goals : started(m) ? '…' : '-:-';
     head += `<th>${esc(S.teams[m.team_id].label)}<b>${r}</b></th>`;
   }
+  const dq = S.questions.find((q) => q.scope === 'matchday' && q.matchday === S.weeks[S.rankWeek]);
+  if (dq) head += `<th>Frage<b>${dq.resolved ? Number(dq.correct_number) : '?'}</b></th>`;
   let body = '';
   rows.forEach((r, i) => {
     let cells = '';
     for (const m of ms) {
       const t = S.tips.find((x) => x.match_id === m.id && x.profile_id === r.id);
       if (!t) { cells += `<td class="muted">${started(m) ? '–' : (r.id === S.session.user.id ? '–' : '?')}</td>`; continue; }
-      const p = isFinal(m) ? points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) : null;
-      cells += `<td>${t.home_goals}:${t.guest_goals}${p == null ? '' : `<br><span class="pts p${p}">${p}</span>`}</td>`;
+      const p = isFinal(m) ? tipPts(t, m) : null;
+      cells += `<td>${t.home_goals}:${t.guest_goals}${t.joker ? ' <span class="small tag">×2</span>' : ''}${p == null ? '' : `<br><span class="pts p${Math.min(4, p)}">${p}</span>`}</td>`;
+    }
+    if (dq) {
+      const a = answerOf(dq.id, r.id);
+      cells += `<td>${a && a.number != null ? Number(a.number) : (qClosed(dq) ? '–' : '?')}${dq.resolved ? `<br><span class="pts p${answerPts(dq, a) ? 4 : 0}">${answerPts(dq, a)}</span>` : ''}</td>`;
     }
     body += `<tr class="${r.id === S.session.user.id ? 'me' : ''}"><td class="stick" ${r.id === S.session.user.id ? 'style="background:var(--tint)"' : ''}><div class="who"><span>${i + 1}</span><span class="name">${esc(r.name)}</span><span class="tot"><b>${r.total}</b><span class="small muted">+${r.day}</span></span></div></td>${cells}</tr>`;
   });
   return `<div><h1>Tipptabelle</h1><div class="s13 muted">Tipps und Punkte je Spiel · fremde Tipps ab Anpfiff</div></div>` + pager(S.rankWeek, 'rank', S.currentWeek) +
     `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
+    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz, mit Joker doppelt. Dazu kommen Bonusfragen. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
 }
 function viewLiga() {
   const pills = S.teamList.map((t) => `<button data-act="liga" data-id="${t.id}" class="${t.id === S.liga ? 'on' : ''}">${esc(t.label)}</button>`).join('');
@@ -317,6 +453,8 @@ function viewSettings() {
   return `<div><h1>Einstellungen</h1><div class="s13 muted">${esc(S.session.user.email)}</div></div>
     <div class="card"><label>Anzeigename<input type="text" id="dn" maxlength="24" value="${esc(S.profile.display_name)}"></label>
       <button class="btn" data-act="save-name">Namen speichern</button>${S.nameMsg ? `<div class="msg">${esc(S.nameMsg)}</div>` : ''}</div>
+    <div class="card"><b>Deine Mannschaften</b><div class="small muted">Für „dein Team“ und die Statistiken. Mehrere möglich.</div>
+      <div class="pills">${S.teamList.map((t) => `<button data-act="myteam" data-id="${t.id}" class="${teamsOf(S.session.user.id).includes(t.id) ? 'on' : ''}">${esc(t.label)}</button>`).join('')}</div></div>
     <div class="card"><div class="between"><b>Dunkles Design</b><button class="btn" data-act="dark">${dark ? 'An' : 'Aus'}</button></div></div>
     <div class="card"><div class="between"><b>Verein</b><span class="s13">${esc(S.club.name)}</span></div>
       <div class="small muted">Die Farben der App richten sich nach dem Vereinswappen.</div></div>
@@ -352,9 +490,9 @@ function render() {
   else if (!authed) body = viewAuth();
   else if (S.loadError) body = `<div class="msg">Daten konnten nicht geladen werden: ${esc(S.loadError)}</div>`;
   else if (!S.profile || !S.profile.club_id) body = '<div class="msg">Dein Konto ist noch keinem Verein zugeordnet. Melde dich bei deinem Vereins-Admin.</div><button class="btn ghost" data-act="logout">Abmelden</button>';
-  else body = (nameMissing() && S.tab !== 'set' ? nameCard() : '') + { tipp: viewTipp, rank: viewRank, liga: viewLiga, set: viewSettings }[S.tab]();
+  else body = (nameMissing() && S.tab !== 'set' ? nameCard() : '') + { tipp: viewTipp, rank: viewRank, bonus: viewBonus, stats: viewStats, liga: viewLiga, set: viewSettings }[S.tab]();
   const showNav = authed && S.profile && S.profile.club_id && !S.loadError;
-  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['liga', 'Ligen'], ['set', 'Mehr']];
+  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['bonus', 'Bonus'], ['stats', 'Statistik'], ['liga', 'Ligen'], ['set', 'Mehr']];
   app.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
     <main>${body}</main>` + (showNav ? `<nav><div class="inner">${tabs.map((t) => `<button data-act="tab" data-id="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('')}</div></nav>` : '');
   window.scrollTo(0, keepScroll);
@@ -368,6 +506,19 @@ app.addEventListener('click', async (e) => {
   if (a === 'tab') { S.tab = id; render(); window.scrollTo(0, 0); }
   else if (a === 'tip') changeTip(id, b.dataset.side, Number(b.dataset.d));
   else if (a === 'quick') quickTip();
+  else if (a === 'joker') toggleJoker(id);
+  else if (a === 'ans-num') {
+    const q = S.questions.find((x) => x.id === id), cur = answerOf(id, S.session.user.id);
+    const n = cur && cur.number != null ? Math.max(0, Math.min(99, Number(cur.number) + Number(b.dataset.d))) : (q.kind === 'final_position' ? 1 : 0);
+    saveAnswer(q, { number: n });
+  }
+  else if (a === 'ans-team') saveAnswer(S.questions.find((x) => x.id === id), { team_id: b.dataset.team });
+  else if (a === 'myteam') {
+    const uid = S.session.user.id, has = S.pteams.find((x) => x.profile_id === uid && x.team_id === id);
+    if (has) { const r = await sb.from('profile_teams').delete().eq('profile_id', uid).eq('team_id', id); if (!r.error) S.pteams = S.pteams.filter((x) => x !== has); }
+    else { const r = await sb.from('profile_teams').insert({ profile_id: uid, team_id: id }); if (!r.error) S.pteams.push({ profile_id: uid, team_id: id }); }
+    render();
+  }
   else if (a === 'all') { S.open[id] = !S.open[id]; render(); }
   else if (a === 'tip-prev') { S.tipWeek--; render(); }
   else if (a === 'tip-next') { S.tipWeek++; render(); }
