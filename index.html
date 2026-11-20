@@ -81,6 +81,7 @@ table.lt{table-layout:fixed}
 table.lt td.nm,table.lt th.nm{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.lt td.cr{padding:4px 0}
 th .crest{display:block;margin:0 auto 2px}
+.l2{height:18px;margin-top:3px;display:flex;justify-content:center;align-items:center;gap:3px;font-size:12px;line-height:1}
 .joker{min-width:72px;padding:0 8px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
 .joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .joker:disabled{opacity:.4}
@@ -516,13 +517,13 @@ function viewRank() {
     let cells = '';
     for (const m of ms) {
       const t = S.tips.find((x) => x.match_id === m.id && x.profile_id === r.id);
-      if (!t) { cells += `<td class="muted">${started(m) ? '–' : (r.id === S.session.user.id ? '–' : '?')}</td>`; continue; }
+      if (!t) { cells += `<td class="muted">${started(m) ? '–' : (r.id === S.session.user.id ? '–' : '?')}<div class="l2"></div></td>`; continue; }
       const p = isFinal(m) ? tipPts(t, m) : null;
-      cells += `<td>${t.home_goals}:${t.guest_goals}${p == null ? (t.joker ? '<br>🃏' : '') : `<br>${t.joker ? '🃏' : ''}<span class="pts p${Math.min(4, p)}">${p}</span>`}</td>`;
+      cells += `<td>${t.home_goals}:${t.guest_goals}<div class="l2">${t.joker ? '<span title="Joker: zählt doppelt">🃏</span>' : ''}${p == null ? '' : `<span class="pts p${Math.min(4, p)}">${p}</span>`}</div></td>`;
     }
     if (wq.length) {
       const done = wq.filter((q) => q.resolved), sum = done.reduce((a, q) => a + bonusPts(q, r.id), 0);
-      cells += `<td>${done.length ? `<span class="pts p${sum ? 4 : 0}">${sum}</span>` : '…'}</td>`;
+      cells += `<td>${done.length ? '&nbsp;' : '…'}<div class="l2">${done.length ? `<span class="pts p${sum ? 4 : 0}">${sum}</span>` : ''}</div></td>`;
     }
     body += `<tr class="${r.id === S.session.user.id ? 'me' : ''}"><td class="stick" ${r.id === S.session.user.id ? 'style="background:var(--tint)"' : ''}><div class="who"><span>${i + 1}</span><span class="name">${esc(r.name)}</span><span class="tot"><b>${r.total}</b><span class="small muted">+${r.day}</span></span></div></td>${cells}</tr>`;
   });
