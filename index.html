@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B4EA2">
+<meta name="robots" content="noindex">
+<title>TYT – Tip Your Team</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap">
+<style>
+:root{--accent:#0B4EA2;--accent-text:#0B4EA2;--bg:#F3F5F7;--card:#FFFFFF;--text:#141A21;--muted:#56616D;--line:#DDE2E7;--tint:#E8EEF5}
+:root.dark{--bg:#0F1318;--card:#1A2028;--text:#F2F4F6;--muted:#A9B3BD;--line:#2C3540;--tint:#27303B;--accent-text:#9CC4F5}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-text-size-adjust:100%}
+button,input{font-family:inherit;font-size:inherit}
+button{cursor:pointer}
+#app{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+header{background:var(--accent);color:#fff;padding:18px 20px 14px;padding-top:calc(18px + env(safe-area-inset-top))}
+header .row{display:flex;justify-content:space-between;align-items:baseline}
+.logo{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;letter-spacing:1px}
+header .sub{font-size:13px;margin-top:4px}
+main{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;padding-bottom:96px}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav .inner{max-width:520px;margin:0 auto;display:flex;padding:6px}
+nav button{flex:1;min-height:48px;border:none;border-top:3px solid transparent;background:transparent;color:var(--muted);font-weight:500;font-size:12px}
+nav button.on{color:var(--accent-text);font-weight:700;border-top-color:var(--accent-text)}
+h1{font-family:'Space Grotesk',sans-serif;font-size:20px;margin:0}
+.muted{color:var(--muted)}.small{font-size:12px}.s13{font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card.todo{border-color:var(--accent-text)}
+.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.btn{min-height:44px;padding:0 14px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-weight:600;font-size:14px}
+.btn.ghost{background:var(--card);color:var(--text);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px}
+.pager button{width:44px;height:44px;border:none;border-radius:12px;background:var(--tint);color:var(--text);font-size:22px}
+.pager button:disabled{color:var(--muted);opacity:.5}
+.pager .mid{text-align:center}.pager .mid b{font-size:15px}
+.teams{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.teams>div{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.teams>div:last-child{justify-content:flex-end;text-align:right}
+.crest{width:32px;height:32px;flex-shrink:0;object-fit:contain}
+.crest.sm{width:22px;height:22px}
+.stepper{display:flex;justify-content:center;align-items:center;gap:6px}
+.stepper button{width:44px;height:44px;border:none;border-radius:12px;background:var(--tint);color:var(--text);font-size:22px}
+.num{width:30px;text-align:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px}
+.colon{width:14px;text-align:center;font-weight:700;font-size:22px;color:var(--muted)}
+.result{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;text-align:center}
+.tag{font-weight:600;color:var(--accent-text)}
+.list{background:var(--tint);border-radius:12px;padding:4px 12px}
+.list>div{display:flex;gap:8px;padding:8px 0;font-size:13px}
+.list>div>:first-child{flex:1}
+.scroll{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;width:100%}
+th,td{padding:8px 6px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;color:var(--muted);font-weight:600;vertical-align:bottom}
+th b{display:block;font-size:13px;color:var(--text)}
+.stick{position:sticky;left:0;background:var(--card);text-align:left;border-right:1px solid var(--line);min-width:132px}
+tr.me td{background:var(--tint)}
+.who{display:flex;align-items:center;gap:6px;font-weight:600}
+.who .name{flex:1;overflow:hidden;text-overflow:ellipsis;max-width:74px}
+.who .tot{text-align:right}
+.who .tot b{font-family:'Space Grotesk',sans-serif;font-size:18px;display:block}
+.pts{display:inline-block;min-width:22px;padding:1px 0;border-radius:6px;font-size:11px;font-weight:700;color:var(--muted)}
+.pts.p2,.pts.p3{background:var(--tint);color:var(--text)}
+tr.me .pts.p2,tr.me .pts.p3{background:var(--card)}
+.pts.p4{background:var(--accent);color:#fff}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pills button{min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:22px;background:var(--card);color:var(--text);font-weight:600;font-size:14px}
+.pills button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+label{font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:6px}
+input[type=email],input[type=password],input[type=text]{min-height:48px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--card);color:var(--text);font-size:16px}
+.msg{font-size:13px;padding:10px 12px;border-radius:12px;background:var(--tint)}
+.link{background:none;border:none;color:var(--accent-text);font-weight:600;font-size:14px;min-height:44px;text-align:left;padding:0}
+.own td{font-weight:700;background:var(--tint)}
+.left{text-align:left}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://gglktzmglclnaqtuztnf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_t5yL-_iDGq47tCqaJDbdSw_KM85kRuI';
+const TZ = 'Europe/Berlin';
+const hashAtLoad = location.hash;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const app = document.getElementById('app');
+const S = { tab: 'tipp', needPassword: /type=(invite|recovery)/.test(hashAtLoad), authMsg: '', open: {}, saving: {} };
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+if (store.get('tyt-dark') === '1') document.documentElement.classList.add('dark');
+
+// ---------- Hilfen ----------
+function points(th, tg, rh, rg) {
+  if (th === rh && tg === rg) return 4;
+  if (rh === rg) return th === tg ? 2 : 0;
+  if (th - tg === rh - rg) return 3;
+  return Math.sign(th - tg) === Math.sign(rh - rg) ? 2 : 0;
+}
+const berlinDay = (iso) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: TZ });
+function weekKey(iso) {
+  const [y, m, d] = berlinDay(iso).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+  return dt.toISOString().slice(0, 10);
+}
+function weekLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const f = (off) => { const x = new Date(Date.UTC(y, m - 1, d + off)); return String(x.getUTCDate()).padStart(2, '0') + '.' + String(x.getUTCMonth() + 1).padStart(2, '0') + '.'; };
+  return f(0) + ' – ' + f(6) + y;
+}
+const when = (iso) => new Date(iso).toLocaleString('de-DE', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '').replace(/, /, ' · ');
+const started = (m) => new Date(m.kickoff) <= new Date();
+const isFinal = (m) => m.result_final && !m.void && m.home_goals != null && m.guest_goals != null;
+function crest(clubId, cls) {
+  const url = S.logos[clubId];
+  return url ? `<img class="crest ${cls || ''}" src="${esc(url)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="crest ${cls || ''}"></span>`;
+}
+function applyClubColor() {
+  const c = S.club && S.club.color_primary;
+  if (c) {
+    document.documentElement.style.setProperty('--accent', c);
+    if (!document.documentElement.classList.contains('dark')) document.documentElement.style.setProperty('--accent-text', c);
+    else document.documentElement.style.removeProperty('--accent-text');
+    const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.content = c;
+  }
+}
+
+// ---------- Daten ----------
+async function loadAll() {
+  const uid = S.session.user.id;
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
+  S.profile = profile;
+  if (!profile || !profile.club_id) return;
+  const [club, teams, matches, logos, tips, profiles, tables] = await Promise.all([
+    sb.from('clubs').select('*').eq('id', profile.club_id).maybeSingle(),
+    sb.from('teams').select('*').order('sort_order'),
+    sb.from('matches').select('*').eq('counts', true).order('kickoff').limit(2000),
+    sb.from('bfv_clubs').select('bfv_club_id,logo_url').limit(2000),
+    sb.from('tips').select('*').limit(20000),
+    sb.from('profiles').select('id,display_name'),
+    sb.from('league_tables').select('*').order('position').limit(5000),
+  ]);
+  const err = [club, teams, matches, logos, tips, profiles, tables].find((r) => r.error);
+  if (err) { S.loadError = err.error.message; return; }
+  S.club = club.data;
+  S.teams = Object.fromEntries(teams.data.map((t) => [t.id, t]));
+  S.teamList = teams.data.filter((t) => t.counts);
+  S.matches = matches.data.filter((m) => S.teams[m.team_id] && S.teams[m.team_id].counts);
+  S.logos = Object.fromEntries(logos.data.map((l) => [l.bfv_club_id, l.logo_url]));
+  S.tips = tips.data;
+  S.profiles = profiles.data;
+  S.tables = tables.data;
+  S.weeks = [...new Set(S.matches.map((m) => weekKey(m.kickoff)))].sort();
+  const now = new Date();
+  const next = S.matches.find((m) => new Date(m.kickoff) > now);
+  S.currentWeek = next ? S.weeks.indexOf(weekKey(next.kickoff)) : S.weeks.length - 1;
+  S.tipWeek = S.currentWeek;
+  const lastStarted = [...S.matches].reverse().find((m) => new Date(m.kickoff) <= now);
+  S.rankWeek = lastStarted ? S.weeks.indexOf(weekKey(lastStarted.kickoff)) : S.currentWeek;
+  S.liga = S.teamList[0] && S.teamList[0].id;
+  applyClubColor();
+}
+const myTip = (matchId) => S.tips.find((t) => t.match_id === matchId && t.profile_id === S.session.user.id);
+const weekMatches = (i) => S.matches.filter((m) => weekKey(m.kickoff) === S.weeks[i]);
+
+const timers = {};
+function changeTip(matchId, side, delta) {
+  let t = myTip(matchId);
+  if (!t) { t = { match_id: matchId, profile_id: S.session.user.id, home_goals: 0, guest_goals: 0, _new: true }; t[side] = Math.max(0, delta); S.tips.push(t); }
+  else t[side] = Math.max(0, Math.min(20, t[side] + delta));
+  S.saving[matchId] = 'offen';
+  render();
+  clearTimeout(timers[matchId]);
+  timers[matchId] = setTimeout(() => saveTip(matchId), 700);
+}
+async function saveTip(matchId) {
+  const t = myTip(matchId);
+  if (!t) return;
+  let res;
+  if (t._new) {
+    res = await sb.from('tips').insert({ match_id: t.match_id, profile_id: t.profile_id, home_goals: t.home_goals, guest_goals: t.guest_goals }).select().single();
+    if (!res.error) { t.id = res.data.id; delete t._new; }
+  } else {
+    res = await sb.from('tips').update({ home_goals: t.home_goals, guest_goals: t.guest_goals }).eq('id', t.id).select().single();
+  }
+  S.saving[matchId] = res.error ? 'fehler' : 'ok';
+  if (res.error) console.error(res.error);
+  render();
+}
+async function quickTip() {
+  const todo = weekMatches(S.tipWeek).filter((m) => !started(m) && !m.void && !myTip(m.id));
+  for (const m of todo) {
+    S.tips.push({ match_id: m.id, profile_id: S.session.user.id, home_goals: m.is_home ? 2 : 1, guest_goals: m.is_home ? 1 : 2, _new: true });
+    S.saving[m.id] = 'offen';
+  }
+  render();
+  for (const m of todo) await saveTip(m.id);
+}
+
+// ---------- Ansichten ----------
+function pager(idx, name, current) {
+  const key = S.weeks[idx];
+  return `<div class="pager">
+    <button data-act="${name}-prev" aria-label="Vorheriger Spieltag" ${idx <= 0 ? 'disabled' : ''}>‹</button>
+    <div class="mid"><b>Spieltag ${idx + 1}${idx === current ? ' · aktuell' : ''}</b><div class="small muted">${weekLabel(key)}</div></div>
+    <button data-act="${name}-next" aria-label="Nächster Spieltag" ${idx >= S.weeks.length - 1 ? 'disabled' : ''}>›</button>
+  </div>`;
+}
+function matchHead(m) {
+  const team = S.teams[m.team_id];
+  return `<div class="small muted"><div class="tag">${esc(team.label)} · ${m.is_home ? 'Heim' : 'Auswärts'}</div><div>${esc(when(m.kickoff))}</div></div>
+  <div class="teams"><div>${crest(m.home_bfv_club_id)}<span>${esc(m.home_name)}</span></div><div><span>${esc(m.guest_name)}</span>${crest(m.guest_bfv_club_id)}</div></div>`;
+}
+function viewTipp() {
+  const ms = weekMatches(S.tipWeek);
+  const open = ms.filter((m) => !started(m) && !m.void);
+  const tipped = open.filter((m) => myTip(m.id)).length;
+  let sub = open.length ? `${tipped} von ${open.length} getippt` : 'Alle Spiele dieses Spieltags sind angepfiffen';
+  let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted">${sub}</div></div>
+    ${open.length && tipped < open.length ? '<button class="btn" data-act="quick">Schnelltipp</button>' : ''}</div>` + pager(S.tipWeek, 'tip', S.currentWeek);
+  if (!ms.length) html += '<div class="msg">An diesem Spieltag gibt es keine Spiele.</div>';
+  for (const m of ms) {
+    const t = myTip(m.id);
+    if (m.void) {
+      html += `<div class="card">${matchHead(m)}<div class="msg">Keine Wertung (${esc(m.result_text || 'abgesetzt')})</div></div>`;
+    } else if (!started(m)) {
+      const st = S.saving[m.id];
+      const note = st === 'fehler' ? 'Nicht gespeichert – bitte nochmal versuchen' : st === 'offen' ? 'Speichert …' : t ? 'Gespeichert · alle Tipps sichtbar ab Anpfiff' : 'Noch nicht getippt';
+      html += `<div class="card ${t ? '' : 'todo'}">${matchHead(m)}
+        <div class="stepper">
+          <button data-act="tip" data-id="${m.id}" data-side="home_goals" data-d="-1" aria-label="Heimtor weniger">−</button>
+          <div class="num">${t ? t.home_goals : '–'}</div>
+          <button data-act="tip" data-id="${m.id}" data-side="home_goals" data-d="1" aria-label="Heimtor mehr">+</button>
+          <div class="colon">:</div>
+          <button data-act="tip" data-id="${m.id}" data-side="guest_goals" data-d="-1" aria-label="Gasttor weniger">−</button>
+          <div class="num">${t ? t.guest_goals : '–'}</div>
+          <button data-act="tip" data-id="${m.id}" data-side="guest_goals" data-d="1" aria-label="Gasttor mehr">+</button>
+        </div>
+        <div class="small muted" style="text-align:center">${note}</div></div>`;
+    } else {
+      const fin = isFinal(m);
+      const res = fin ? `<div class="result">${m.home_goals}:${m.guest_goals}</div><div class="small muted" style="text-align:center">Endstand, offiziell bestätigt</div>`
+        : `<div class="msg">${m.result_text ? 'Ergebnis ' + esc(m.result_text) + ' – noch nicht bestätigt' : 'Angepfiffen – Ergebnis folgt nach offizieller Bestätigung'}</div>`;
+      const mine = t ? `Dein Tipp <b>${t.home_goals}:${t.guest_goals}</b>${fin ? ' · ' + points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) + ' Punkte' : ''}` : 'Kein Tipp abgegeben';
+      let all = '';
+      if (S.open[m.id]) {
+        const rows = S.profiles.map((p) => {
+          const pt = S.tips.find((x) => x.match_id === m.id && x.profile_id === p.id);
+          return `<div><span>${esc(p.display_name)}</span><b>${pt ? pt.home_goals + ':' + pt.guest_goals : '–'}</b><b style="width:26px;text-align:right">${pt && fin ? points(pt.home_goals, pt.guest_goals, m.home_goals, m.guest_goals) : ''}</b></div>`;
+        }).join('');
+        all = `<div class="list">${rows}</div>`;
+      }
+      html += `<div class="card">${matchHead(m)}${res}
+        <div class="between"><div class="s13">${mine}</div><button class="btn ghost" data-act="all" data-id="${m.id}">${S.open[m.id] ? 'Schließen' : 'Alle Tipps'}</button></div>${all}</div>`;
+    }
+  }
+  return html;
+}
+function standings(uptoWeek) {
+  const limit = S.weeks[uptoWeek];
+  const byId = Object.fromEntries(S.matches.map((m) => [m.id, m]));
+  const rows = S.profiles.map((p) => ({ id: p.id, name: p.display_name, total: 0, day: 0 }));
+  const idx = Object.fromEntries(rows.map((r) => [r.id, r]));
+  for (const t of S.tips) {
+    const m = byId[t.match_id]; const r = idx[t.profile_id];
+    if (!m || !r || !isFinal(m)) continue;
+    const wk = weekKey(m.kickoff);
+    if (wk > limit) continue;
+    const p = points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals);
+    r.total += p; if (wk === limit) r.day += p;
+  }
+  rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  return rows;
+}
+function viewRank() {
+  const ms = weekMatches(S.rankWeek);
+  const rows = standings(S.rankWeek);
+  let head = '<th class="stick"><div class="between"><span>Trainer</span><span>Gesamt</span></div></th>';
+  for (const m of ms) {
+    const r = m.void ? 'o. W.' : isFinal(m) ? m.home_goals + ':' + m.guest_goals : started(m) ? '…' : '-:-';
+    head += `<th>${esc(S.teams[m.team_id].label)}<b>${r}</b></th>`;
+  }
+  let body = '';
+  rows.forEach((r, i) => {
+    let cells = '';
+    for (const m of ms) {
+      const t = S.tips.find((x) => x.match_id === m.id && x.profile_id === r.id);
+      if (!t) { cells += `<td class="muted">${started(m) ? '–' : (r.id === S.session.user.id ? '–' : '?')}</td>`; continue; }
+      const p = isFinal(m) ? points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) : null;
+      cells += `<td>${t.home_goals}:${t.guest_goals}${p == null ? '' : `<br><span class="pts p${p}">${p}</span>`}</td>`;
+    }
+    body += `<tr class="${r.id === S.session.user.id ? 'me' : ''}"><td class="stick" ${r.id === S.session.user.id ? 'style="background:var(--tint)"' : ''}><div class="who"><span>${i + 1}</span><span class="name">${esc(r.name)}</span><span class="tot"><b>${r.total}</b><span class="small muted">+${r.day}</span></span></div></td>${cells}</tr>`;
+  });
+  return `<div><h1>Tipptabelle</h1><div class="s13 muted">Tipps und Punkte je Spiel · fremde Tipps ab Anpfiff</div></div>` + pager(S.rankWeek, 'rank', S.currentWeek) +
+    `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
+}
+function viewLiga() {
+  const pills = S.teamList.map((t) => `<button data-act="liga" data-id="${t.id}" class="${t.id === S.liga ? 'on' : ''}">${esc(t.label)}</button>`).join('');
+  const rows = S.tables.filter((r) => r.team_id === S.liga);
+  const team = S.teams[S.liga];
+  let table = '<div class="msg">Für diese Mannschaft liegt noch keine Tabelle vor.</div>';
+  if (rows.length) {
+    table = `<div class="scroll"><table><thead><tr><th>#</th><th class="left">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>` +
+      rows.map((r) => `<tr class="${r.is_own ? 'own' : ''}"><td>${r.rank ?? r.position}</td><td class="left">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`).join('') + '</tbody></table></div>';
+  }
+  return `<div><h1>Ligatabellen</h1><div class="s13 muted">${esc(team ? team.competition_name || '' : '')}</div></div><div class="pills">${pills}</div>${table}`;
+}
+function viewSettings() {
+  const dark = document.documentElement.classList.contains('dark');
+  return `<div><h1>Einstellungen</h1><div class="s13 muted">${esc(S.session.user.email)}</div></div>
+    <div class="card"><label>Anzeigename<input type="text" id="dn" maxlength="24" value="${esc(S.profile.display_name)}"></label>
+      <button class="btn" data-act="save-name">Namen speichern</button>${S.nameMsg ? `<div class="msg">${esc(S.nameMsg)}</div>` : ''}</div>
+    <div class="card"><div class="between"><b>Dunkles Design</b><button class="btn" data-act="dark">${dark ? 'An' : 'Aus'}</button></div></div>
+    <div class="card"><div class="between"><b>Verein</b><span class="s13">${esc(S.club.name)}</span></div>
+      <div class="small muted">Die Farben der App richten sich nach dem Vereinswappen.</div></div>
+    <button class="btn ghost" data-act="logout">Abmelden</button>`;
+}
+function viewAuth() {
+  if (S.session && S.needPassword) {
+    return `<div><h1>Passwort festlegen</h1><div class="s13 muted">Damit meldest du dich künftig an.</div></div>
+      <form class="card" data-form="setpw"><label>Neues Passwort (mindestens 8 Zeichen)<input type="password" name="pw" minlength="8" autocomplete="new-password" required></label>
+      <button class="btn" type="submit">Speichern</button>${S.authMsg ? `<div class="msg">${esc(S.authMsg)}</div>` : ''}</form>`;
+  }
+  return `<div><h1>Anmelden</h1><div class="s13 muted">Das Tippspiel für deinen Verein. Zugang nur mit Einladung.</div></div>
+    <form class="card" data-form="login">
+      <label>E-Mail<input type="email" name="email" autocomplete="email" required></label>
+      <label>Passwort<input type="password" name="pw" autocomplete="current-password"></label>
+      <button class="btn" type="submit">Anmelden</button>
+      <button class="link" type="button" data-act="reset">Passwort vergessen? Link per E-Mail schicken</button>
+      ${S.authMsg ? `<div class="msg">${esc(S.authMsg)}</div>` : ''}
+    </form>`;
+}
+function render() {
+  const keepScroll = window.scrollY;
+  const authed = S.session && !S.needPassword;
+  let body;
+  if (!S.ready) body = '<div class="msg">Lädt …</div>';
+  else if (!authed) body = viewAuth();
+  else if (S.loadError) body = `<div class="msg">Daten konnten nicht geladen werden: ${esc(S.loadError)}</div>`;
+  else if (!S.profile || !S.profile.club_id) body = '<div class="msg">Dein Konto ist noch keinem Verein zugeordnet. Melde dich bei deinem Vereins-Admin.</div><button class="btn ghost" data-act="logout">Abmelden</button>';
+  else body = { tipp: viewTipp, rank: viewRank, liga: viewLiga, set: viewSettings }[S.tab]();
+  const showNav = authed && S.profile && S.profile.club_id && !S.loadError;
+  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['liga', 'Ligen'], ['set', 'Mehr']];
+  app.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
+    <main>${body}</main>` + (showNav ? `<nav><div class="inner">${tabs.map((t) => `<button data-act="tab" data-id="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('')}</div></nav>` : '');
+  window.scrollTo(0, keepScroll);
+}
+
+// ---------- Ereignisse ----------
+app.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const a = b.dataset.act, id = b.dataset.id;
+  if (a === 'tab') { S.tab = id; render(); window.scrollTo(0, 0); }
+  else if (a === 'tip') changeTip(id, b.dataset.side, Number(b.dataset.d));
+  else if (a === 'quick') quickTip();
+  else if (a === 'all') { S.open[id] = !S.open[id]; render(); }
+  else if (a === 'tip-prev') { S.tipWeek--; render(); }
+  else if (a === 'tip-next') { S.tipWeek++; render(); }
+  else if (a === 'rank-prev') { S.rankWeek--; render(); }
+  else if (a === 'rank-next') { S.rankWeek++; render(); }
+  else if (a === 'liga') { S.liga = id; render(); }
+  else if (a === 'dark') { const on = document.documentElement.classList.toggle('dark'); store.set('tyt-dark', on ? '1' : '0'); applyClubColor(); render(); }
+  else if (a === 'logout') { await sb.auth.signOut(); }
+  else if (a === 'save-name') {
+    const v = document.getElementById('dn').value.trim();
+    if (!v) return;
+    const { error } = await sb.from('profiles').update({ display_name: v }).eq('id', S.session.user.id);
+    if (!error) { S.profile.display_name = v; const p = S.profiles.find((x) => x.id === S.session.user.id); if (p) p.display_name = v; }
+    S.nameMsg = error ? 'Speichern hat nicht geklappt.' : 'Gespeichert.'; render();
+  }
+  else if (a === 'reset') {
+    const email = app.querySelector('input[name=email]').value.trim();
+    if (!email) { S.authMsg = 'Trag zuerst deine E-Mail-Adresse ein.'; render(); return; }
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    S.authMsg = error ? 'Das hat nicht geklappt: ' + error.message : 'Falls es ein Konto mit dieser Adresse gibt, ist eine E-Mail mit Link unterwegs.'; render();
+  }
+});
+app.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, kind = f.dataset.form, fd = new FormData(f);
+  if (kind === 'login') {
+    const { error } = await sb.auth.signInWithPassword({ email: fd.get('email').trim(), password: fd.get('pw') });
+    if (error) { S.authMsg = 'Anmeldung fehlgeschlagen. Stimmen E-Mail und Passwort?'; render(); }
+  } else if (kind === 'setpw') {
+    const { error } = await sb.auth.updateUser({ password: fd.get('pw') });
+    if (error) { S.authMsg = 'Das hat nicht geklappt: ' + error.message; render(); return; }
+    S.needPassword = false; S.authMsg = ''; history.replaceState(null, '', location.pathname);
+    await loadAll(); render();
+  }
+});
+
+let loadedFor = null;
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'PASSWORD_RECOVERY') S.needPassword = true;
+  S.session = session;
+  setTimeout(async () => {
+    if (session && loadedFor !== session.user.id) { loadedFor = session.user.id; S.authMsg = ''; await loadAll(); }
+    if (!session) { loadedFor = null; S.profile = null; S.club = null; }
+    S.ready = true; render();
+  }, 0);
+});
+render();
+</script>
+</body>
+</html>
