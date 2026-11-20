@@ -187,6 +187,8 @@ async function loadAll() {
   S.tipWeek = S.currentWeek;
   const lastStarted = [...S.matches].reverse().find((m) => new Date(m.kickoff) <= now);
   S.rankWeek = lastStarted ? S.weeks.indexOf(weekKey(lastStarted.kickoff)) : S.currentWeek;
+  const tippedIn = (i) => { const ids = new Set(weekMatches(i).map((m) => m.id)); return S.tips.some((t) => ids.has(t.match_id)); };
+  if (!tippedIn(S.rankWeek)) S.rankWeek = S.currentWeek;
   S.liga = S.teamList[0] && S.teamList[0].id;
   applyClubColor();
 }
@@ -311,7 +313,7 @@ function matchHead(m) {
 }
 const LT_COLS = '<colgroup><col style="width:30px"><col style="width:28px"><col><col style="width:32px"><col style="width:38px"><col style="width:34px"></colgroup>';
 const LT_HEAD = '<thead><tr><th>#</th><th></th><th class="nm">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead>';
-const ltRow = (r, cls) => `<tr class="${cls}"><td>${r.rank ?? r.position}</td><td class="cr">${crest(r.is_own ? S.club.bfv_club_id : S.clubByName[r.team_name], 'sm')}</td><td class="nm" title="${esc(r.team_name)}">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`;
+const ltRow = (r, cls) => `<tr class="${cls}"><td>${r.rank ?? r.position}</td><td class="cr">${crest(r.bfv_club_id || (r.is_own ? S.club.bfv_club_id : S.clubByName[r.team_name]), 'sm')}</td><td class="nm" title="${esc(r.team_name)}">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`;
 function miniTable(m) {
   const rows = S.tables.filter((r) => r.team_id === m.team_id);
   if (!rows.length) return '<div class="msg">Für diese Mannschaft liegt keine Tabelle vor.</div>';
@@ -575,6 +577,18 @@ function viewAuth() {
       ${S.authMsg ? `<div class="msg">${esc(S.authMsg)}</div>` : ''}
     </form>`;
 }
+function morph(from, to) {
+  if (from.nodeType !== to.nodeType || from.nodeName !== to.nodeName) { from.replaceWith(to); return; }
+  if (from.nodeType === 3) { if (from.nodeValue !== to.nodeValue) from.nodeValue = to.nodeValue; return; }
+  if (from.nodeType !== 1) return;
+  const oldValue = from.getAttribute('value');
+  for (const a of [...from.attributes]) if (!to.hasAttribute(a.name)) from.removeAttribute(a.name);
+  for (const a of [...to.attributes]) if (from.getAttribute(a.name) !== a.value) from.setAttribute(a.name, a.value);
+  if (from.nodeName === 'INPUT' && to.hasAttribute('value') && oldValue !== to.getAttribute('value')) from.value = to.getAttribute('value');
+  const a = [...from.childNodes], b = [...to.childNodes];
+  for (let i = 0; i < b.length; i++) { if (a[i]) morph(a[i], b[i]); else from.appendChild(b[i]); }
+  for (let i = b.length; i < a.length; i++) a[i].remove();
+}
 function render() {
   const keepScroll = window.scrollY;
   const authed = S.session && !S.needPassword;
@@ -585,9 +599,11 @@ function render() {
   else if (!S.profile || !S.profile.club_id) body = '<div class="msg">Dein Konto ist noch keinem Verein zugeordnet. Melde dich bei deinem Vereins-Admin.</div><button class="btn ghost" data-act="logout">Abmelden</button>';
   else body = (nameMissing() && S.tab !== 'set' ? nameCard() : '') + { tipp: viewTipp, rank: viewRank, bonus: viewBonus, stats: viewStats, liga: viewLiga, set: viewSettings }[S.tab]();
   const showNav = authed && S.profile && S.profile.club_id && !S.loadError;
-  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['stats', 'Statistik'], ['liga', 'Ligen'], ['set', 'Mehr']];  // Saisonfragen (Reiter 'bonus') sind vorerst ausgeblendet
-  app.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
+  const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['liga', 'Ligen'], ['stats', 'Statistik'], ['set', 'Mehr']];  // Saisonfragen (Reiter 'bonus') sind vorerst ausgeblendet
+  const next = document.createElement('div');
+  next.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
     <main>${body}</main>` + (showNav ? `<nav><div class="inner">${tabs.map((t) => `<button data-act="tab" data-id="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('')}</div></nav>` : '');
+  morph(app, Object.assign(next, { id: 'app' }));
   window.scrollTo(0, keepScroll);
 }
 
