@@ -322,10 +322,17 @@ function viewSettings() {
       <div class="small muted">Die Farben der App richten sich nach dem Vereinswappen.</div></div>
     <button class="btn ghost" data-act="logout">Abmelden</button>`;
 }
+const nameMissing = () => S.profile && S.session && S.profile.display_name === (S.session.user.email || '').split('@')[0];
+function nameCard() {
+  return `<div class="card todo"><b>Wie sollen dich die anderen sehen?</b>
+    <div class="s13 muted">Im Moment steht dort „${esc(S.profile.display_name)}“. Du kannst den Namen jederzeit unter „Mehr“ ändern.</div>
+    <label>Dein Name im Tippspiel<input type="text" id="dn" maxlength="24" autocomplete="nickname"></label>
+    <button class="btn" data-act="save-name">Namen speichern</button></div>`;
+}
 function viewAuth() {
   if (S.session && S.needPassword) {
     return `<div><h1>Passwort festlegen</h1><div class="s13 muted">Damit meldest du dich künftig an.</div></div>
-      <form class="card" data-form="setpw"><label>Neues Passwort (mindestens 8 Zeichen)<input type="password" name="pw" minlength="8" autocomplete="new-password" required></label>
+      <form class="card" data-form="setpw"><label>Dein Name im Tippspiel (so sehen dich die anderen)<input type="text" name="dn" maxlength="24" autocomplete="nickname" required></label><label>Neues Passwort (mindestens 8 Zeichen)<input type="password" name="pw" minlength="8" autocomplete="new-password" required></label>
       <button class="btn" type="submit">Speichern</button>${S.authMsg ? `<div class="msg">${esc(S.authMsg)}</div>` : ''}</form>`;
   }
   return `<div><h1>Anmelden</h1><div class="s13 muted">Das Tippspiel für deinen Verein. Zugang nur mit Einladung.</div></div>
@@ -345,7 +352,7 @@ function render() {
   else if (!authed) body = viewAuth();
   else if (S.loadError) body = `<div class="msg">Daten konnten nicht geladen werden: ${esc(S.loadError)}</div>`;
   else if (!S.profile || !S.profile.club_id) body = '<div class="msg">Dein Konto ist noch keinem Verein zugeordnet. Melde dich bei deinem Vereins-Admin.</div><button class="btn ghost" data-act="logout">Abmelden</button>';
-  else body = { tipp: viewTipp, rank: viewRank, liga: viewLiga, set: viewSettings }[S.tab]();
+  else body = (nameMissing() && S.tab !== 'set' ? nameCard() : '') + { tipp: viewTipp, rank: viewRank, liga: viewLiga, set: viewSettings }[S.tab]();
   const showNav = authed && S.profile && S.profile.club_id && !S.loadError;
   const tabs = [['tipp', 'Tippen'], ['rank', 'Tabelle'], ['liga', 'Ligen'], ['set', 'Mehr']];
   app.innerHTML = `<header><div class="row"><span class="logo">TYT</span><span class="s13">Tip Your Team</span></div><div class="sub">${esc(S.club ? S.club.name : 'Tippspiel für Vereine')}</div></header>
@@ -393,6 +400,8 @@ app.addEventListener('submit', async (e) => {
     const { error } = await sb.auth.updateUser({ password: fd.get('pw') });
     if (error) { S.authMsg = 'Das hat nicht geklappt: ' + error.message; render(); return; }
     S.needPassword = false; S.authMsg = ''; history.replaceState(null, '', location.pathname);
+    const dn = String(fd.get('dn') || '').trim();
+    if (dn) await sb.from('profiles').update({ display_name: dn }).eq('id', S.session.user.id);
     await loadAll(); render();
   }
 });
