@@ -220,22 +220,62 @@ function tippedTop(pid, wk, dir) {
 }
 const topLabel = (x) => x.teams.length ? x.teams.map((id) => (S.teams[id] || {}).label).join(', ') + ' (' + x.margin + (x.margin === 1 ? ' Tor' : ' Tore') + ')' : 'keine';
 const weekQuestions = (wk) => S.questions.filter((q) => q.scope === 'matchday' && q.matchday === wk);
+const KIND_ORDER = ['matchday_wins', 'biggest_win', 'biggest_loss', 'total_goals', 'duel', 'men_youth'];
+const dec = (x) => x.toFixed(1).replace('.', ',');
+// Was ein Trainer laut seinen Tipps „vorhersagt“: { key: Vergleichswert oder null, text: Anzeige }
+function derive(q, pid) {
+  const wk = q.matchday, ms = weekendMatches(wk), byId = Object.fromEntries(ms.map((m) => [m.id, m]));
+  const tips = S.tips.filter((t) => t.profile_id === pid && byId[t.match_id]);
+  const own = (t) => { const m = byId[t.match_id]; return m.is_home ? [t.home_goals, t.guest_goals] : [t.guest_goals, t.home_goals]; };
+  const lab = (id) => (S.teams[id] || {}).label || '?';
+  if (q.kind === 'matchday_wins') { const n = tippedWins(pid, wk); return { key: n, text: String(n) }; }
+  if (q.kind === 'biggest_win' || q.kind === 'biggest_loss') { const x = tippedTop(pid, wk, q.kind === 'biggest_win' ? 1 : -1); return { teams: x.teams, text: topLabel(x) }; }
+  if (q.kind === 'total_goals') { const n = tips.reduce((a, t) => a + t.home_goals + t.guest_goals, 0); return tips.length ? { key: n, text: String(n) } : { key: null, text: '–' }; }
+  if (q.kind === 'duel') {
+    const p = q.params || {}, g = {};
+    for (const t of tips) { const m = byId[t.match_id]; g[m.team_id] = (g[m.team_id] || 0) + own(t)[0]; }
+    if (g[p.a] == null || g[p.b] == null) return { key: null, text: '– (beide Spiele tippen)' };
+    const k = g[p.a] > g[p.b] ? 'a' : g[p.a] < g[p.b] ? 'b' : 'equal';
+    return { key: k, text: (k === 'equal' ? 'gleich viele' : lab(k === 'a' ? p.a : p.b)) + ' (' + g[p.a] + ':' + g[p.b] + ')' };
+  }
+  if (q.kind === 'men_youth') {
+    const p = q.params || {}, avg = (ids) => { const pts = tips.filter((t) => (ids || []).includes(byId[t.match_id].team_id)).map((t) => { const [f, a] = own(t); return f > a ? 3 : f === a ? 1 : 0; }); return pts.length ? pts.reduce((x, y) => x + y, 0) / pts.length : null; };
+    const am = avg(p.men), ay = avg(p.youth);
+    if (am == null || ay == null) return { key: null, text: '–' };
+    const d = Math.round((am - ay) * 1e6), k = d > 0 ? 'a' : d < 0 ? 'b' : 'equal';
+    return { key: k, text: (k === 'a' ? 'Herren' : k === 'b' ? 'Jugend' : 'gleich') + ' (' + dec(am) + ' : ' + dec(ay) + ')' };
+  }
+  return { key: null, text: '–' };
+}
+function bonusLabel(q) {
+  const lab = (id) => (S.teams[id] || {}).label || '?', p = q.params || {};
+  return { matchday_wins: 'Siege', biggest_win: 'Höchster Sieg', biggest_loss: 'Höchste Niederlage', total_goals: 'Tore gesamt (nächster dran)', duel: `Duell ${lab(p.a)} – ${lab(p.b)} (Tore)`, men_youth: 'Herren gegen Jugend (Punkteschnitt)' }[q.kind] || q.title;
+}
+function bonusSolution(q) {
+  const lab = (id) => (S.teams[id] || {}).label || '?', p = q.params || {};
+  if (!q.resolved) return '…';
+  if (q.kind === 'biggest_win' || q.kind === 'biggest_loss') return (q.correct_team_ids || []).map(lab).join(', ') || 'keine';
+  if (q.kind === 'duel') return q.correct_text === 'a' ? lab(p.a) : q.correct_text === 'b' ? lab(p.b) : q.correct_text === 'equal' ? 'gleich viele' : 'keine Wertung';
+  if (q.kind === 'men_youth') return q.correct_text === 'a' ? 'Herren' : q.correct_text === 'b' ? 'Jugend' : q.correct_text === 'equal' ? 'gleich' : 'keine Wertung';
+  return q.correct_number != null ? String(Number(q.correct_number)) : '–';
+}
 function bonusPts(q, pid) {
   if (!q.resolved) return 0;
-  if (q.kind === 'matchday_wins') return q.correct_number != null && tippedWins(pid, q.matchday) === Number(q.correct_number) ? q.points : 0;
+  const d = derive(q, pid);
   if (q.kind === 'biggest_win' || q.kind === 'biggest_loss') {
     // Richtig, wenn alle selbst getippten Spitzen-Mannschaften auch tatsächlich vorne liegen
-    const mine = tippedTop(pid, q.matchday, q.kind === 'biggest_win' ? 1 : -1).teams, real = q.correct_team_ids || [];
-    return (mine.length ? mine.every((id) => real.includes(id)) : real.length === 0) ? q.points : 0;
+    const real = q.correct_team_ids || [];
+    return (d.teams.length ? d.teams.every((id) => real.includes(id)) : real.length === 0) ? q.points : 0;
   }
+  if (q.kind === 'matchday_wins') return q.correct_number != null && d.key === Number(q.correct_number) ? q.points : 0;
+  if (q.kind === 'total_goals') {
+    if (d.key == null || q.correct_number == null) return 0;
+    const real = Number(q.correct_number), dist = (x) => Math.abs(x - real);
+    const all = S.profiles.map((pr) => derive(q, pr.id).key).filter((x) => x != null);
+    return dist(d.key) === Math.min(...all.map(dist)) ? q.points : 0;
+  }
+  if (q.kind === 'duel' || q.kind === 'men_youth') return d.key != null && d.key === q.correct_text ? q.points : 0;
   return answerPts(q, answerOf(q.id, pid));
-}
-const answerOf = (qid, pid) => S.answers.find((a) => a.question_id === qid && a.profile_id === pid);
-const qClosed = (q) => new Date(q.deadline) <= new Date();
-function answerPts(q, a) {
-  if (!q.resolved || !a) return 0;
-  if (q.answer_type === 'team') return a.team_id && ((q.correct_team_ids || []).includes(a.team_id) || a.team_id === q.correct_team_id) ? q.points : 0;
-  return a.number != null && q.correct_number != null && Number(a.number) === Number(q.correct_number) ? q.points : 0;
 }
 async function saveAnswer(q, values) {
   const uid = S.session.user.id;
@@ -338,19 +378,14 @@ function miniTable(m) {
 }
 const tableToggle = (m) => `<button class="link" data-act="mini" data-id="${m.id}">${S.mini && S.mini[m.id] ? 'Tabelle ausblenden' : 'Tabelle anzeigen'}</button>${S.mini && S.mini[m.id] ? miniTable(m) : ''}`;
 function bonusCard(wk) {
-  const qs = weekQuestions(wk); if (!qs.length) return '';
-  const uid = S.session.user.id, q = (k) => qs.find((x) => x.kind === k);
-  const allStarted = weekendMatches(wk).every(started), anyResolved = qs.some((x) => x.resolved);
-  const line = (label, kind, val, pid) => { const x = q(kind); return x ? `<div><span>${label}</span><b>${esc(val)}</b><b style="width:26px;text-align:right">${x.resolved ? bonusPts(x, pid) : ''}</b></div>` : ''; };
-  const block = (pid) => line('Siege', 'matchday_wins', String(tippedWins(pid, wk)), pid) + line('Höchster Sieg', 'biggest_win', topLabel(tippedTop(pid, wk, 1)), pid) + line('Höchste Niederlage', 'biggest_loss', topLabel(tippedTop(pid, wk, -1)), pid);
-  let html = `<div class="card" data-bonus style="background:var(--tint)"><div class="small tag">Boni am Wochenende (Fr–So) · je 1 Punkt</div>
-    <div class="small muted">Ergeben sich automatisch aus deinen Tipps. Stimmt ein Wert am Ende, gibt es den Punkt.</div>
+  const qs = weekQuestions(wk).slice().sort((x, y) => KIND_ORDER.indexOf(x.kind) - KIND_ORDER.indexOf(y.kind));
+  if (!qs.length) return '';
+  const uid = S.session.user.id, allStarted = weekendMatches(wk).every(started), anyResolved = qs.some((x) => x.resolved);
+  const block = (pid) => qs.map((q) => `<div><span>${esc(bonusLabel(q))}${q.points > 1 ? ' · ' + q.points + ' P' : ''}</span><b style="text-align:right">${esc(derive(q, pid).text)}</b><b style="width:22px;text-align:right">${q.resolved ? bonusPts(q, pid) : ''}</b></div>`).join('');
+  let html = `<div class="card" data-bonus style="background:var(--tint)"><div class="small tag">Boni am Wochenende (Fr–So)</div>
+    <div class="small muted">Ergeben sich automatisch aus deinen Tipps. Stimmt ein Wert am Ende, gibt es je 1 Punkt. Bei „Tore gesamt“ bekommt ihn, wer am nächsten dran ist.</div>
     <div class="list" style="background:var(--card)">${block(uid)}</div>`;
-  if (anyResolved) {
-    const sol = (kind) => { const x = q(kind); return x && x.resolved ? ((x.correct_team_ids || []).map((id) => (S.teams[id] || {}).label).filter(Boolean).join(', ') || 'keine') : '…'; };
-    const w = q('matchday_wins');
-    html += `<div class="small muted">Tatsächlich: ${w && w.resolved ? Number(w.correct_number) : '…'} Siege · höchster Sieg ${esc(sol('biggest_win'))} · höchste Niederlage ${esc(sol('biggest_loss'))}</div>`;
-  }
+  if (anyResolved) html += `<b class="s13">Tatsächlich</b><div class="list" style="background:var(--card)">${qs.map((q) => `<div><span>${esc(bonusLabel(q))}</span><b>${esc(bonusSolution(q))}</b></div>`).join('')}</div>`;
   if (allStarted) {
     for (const pr of S.profiles.filter((x) => x.id !== uid)) html += `<b class="s13">${esc(pr.display_name)}</b><div class="list" style="background:var(--card)">${block(pr.id)}</div>`;
   } else html += '<div class="small muted">Die Boni der anderen siehst du, sobald alle Wochenendspiele angepfiffen sind.</div>';
@@ -541,7 +576,7 @@ function viewRank() {
   });
   return `<div><h1>Tipptabelle</h1><div class="s13 muted">Tipps und Punkte je Spiel · fremde Tipps ab Anpfiff</div></div>` + pager(S.rankWeek, 'rank', S.currentWeek) +
     `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz. 🃏 = Joker, die Punkte dieses Spiels zählen doppelt. Dazu kommen bis zu 3 Bonuspunkte pro Spieltag, die sich aus den Tipps ergeben. Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
+    <div class="msg">4 Punkte exaktes Ergebnis, 3 Tordifferenz, 2 Tendenz. 🃏 = Joker, die Punkte dieses Spiels zählen doppelt. Dazu kommen Bonuspunkte, die sich aus den Tipps ergeben (Karte unter den Spielen). Gewertet wird erst, wenn das Ergebnis offiziell bestätigt ist.</div>`;
 }
 function viewLiga() {
   const pills = S.teamList.map((t) => `<button data-act="liga" data-id="${t.id}" class="${t.id === S.liga ? 'on' : ''}">${esc(t.label)}</button>`).join('');
