@@ -321,14 +321,16 @@ const LT_HEAD = '<thead><tr><th>#</th><th></th><th class="nm">Mannschaft</th><th
 function zoneOf(teamId, pos, total) {
   const c = (S.teams[teamId] || {}).table_config; if (!c) return '';
   const up = c.promotionTeamCount || 0, upq = c.promotionPlayoffTeamCount || 0, down = c.relegationTeamCount || 0, downq = c.relegationPlayoffTeamCount || 0;
+  if (up + upq + down + downq >= total) return '';  // Angabe deckt die ganze Liga ab: ohne Aussage
   if (pos <= up) return 'z-up';
   if (pos <= up + upq) return 'z-upq';
   if (pos > total - down) return 'z-down';
   if (pos > total - down - downq) return 'z-downq';
   return '';
 }
-function zoneLegend(teamId) {
+function zoneLegend(teamId, total) {
   const c = (S.teams[teamId] || {}).table_config || {}, items = [];
+  if ((c.promotionTeamCount || 0) + (c.promotionPlayoffTeamCount || 0) + (c.relegationTeamCount || 0) + (c.relegationPlayoffTeamCount || 0) >= total) return '';
   if (c.promotionTeamCount) items.push(['#1B7F3B', 'Aufstieg']);
   if (c.promotionPlayoffTeamCount) items.push(['#8FD3A6', 'Aufstiegsrelegation']);
   if (c.relegationPlayoffTeamCount) items.push(['#F2B26B', 'Abstiegsrelegation']);
@@ -342,7 +344,7 @@ function miniTable(m) {
   const opp = m.is_home ? m.guest_name : m.home_name;
   const body = rows.map((r) => ltRow(r, r.is_own ? 'own' : r.team_name === opp ? 'opp' : '', rows.length)).join('');
   const note = rows.some((r) => r.team_name === opp) ? '' : '<div class="small muted">Der Gegner steht nicht in dieser Tabelle (z. B. Pokalspiel).</div>';
-  return `<div class="mini"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>${body}</tbody></table></div>${zoneLegend(m.team_id)}${note}`;
+  return `<div class="mini"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>${body}</tbody></table></div>${zoneLegend(m.team_id, rows.length)}${note}`;
 }
 const tableToggle = (m) => `<button class="link" data-act="mini" data-id="${m.id}">${S.mini && S.mini[m.id] ? 'Tabelle ausblenden' : 'Tabelle anzeigen'}</button>${S.mini && S.mini[m.id] ? miniTable(m) : ''}`;
 function bonusCard(wk) {
@@ -558,7 +560,7 @@ function viewLiga() {
   const team = S.teams[S.liga];
   let table = '<div class="msg">Für diese Mannschaft liegt noch keine Tabelle vor.</div>';
   if (rows.length) {
-    table = `<div class="scroll"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>` + rows.map((r) => ltRow(r, r.is_own ? 'own' : '', rows.length)).join('') + '</tbody></table></div>' + zoneLegend(S.liga);
+    table = `<div class="scroll"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>` + rows.map((r) => ltRow(r, r.is_own ? 'own' : '', rows.length)).join('') + '</tbody></table></div>' + zoneLegend(S.liga, rows.length);
   }
   return `<div><h1>Ligatabellen</h1><div class="s13 muted">${esc(team ? team.competition_name || '' : '')}</div></div><div class="pills">${pills}</div>${table}`;
 }
