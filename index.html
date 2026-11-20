@@ -81,6 +81,10 @@ table.lt{table-layout:fixed}
 table.lt td.nm,table.lt th.nm{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.lt td.cr{padding:4px 0}
 th .crest{display:block;margin:0 auto 2px}
+td.z-up{box-shadow:inset 5px 0 0 #1B7F3B}td.z-upq{box-shadow:inset 5px 0 0 #8FD3A6}
+td.z-downq{box-shadow:inset 5px 0 0 #F2B26B}td.z-down{box-shadow:inset 5px 0 0 #B3261E}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:6px}.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
 .l2{height:18px;margin-top:3px;display:flex;justify-content:center;align-items:center;gap:3px;font-size:12px;line-height:1}
 .joker{min-width:72px;padding:0 8px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
 .joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -314,14 +318,31 @@ function matchHead(m) {
 }
 const LT_COLS = '<colgroup><col style="width:30px"><col style="width:28px"><col><col style="width:32px"><col style="width:38px"><col style="width:34px"></colgroup>';
 const LT_HEAD = '<thead><tr><th>#</th><th></th><th class="nm">Mannschaft</th><th>Sp</th><th>Diff</th><th>Pkt</th></tr></thead>';
-const ltRow = (r, cls) => `<tr class="${cls}"><td>${r.rank ?? r.position}</td><td class="cr">${crest(r.bfv_club_id || (r.is_own ? S.club.bfv_club_id : S.clubByName[r.team_name]), 'sm')}</td><td class="nm" title="${esc(r.team_name)}">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`;
+function zoneOf(teamId, pos, total) {
+  const c = (S.teams[teamId] || {}).table_config; if (!c) return '';
+  const up = c.promotionTeamCount || 0, upq = c.promotionPlayoffTeamCount || 0, down = c.relegationTeamCount || 0, downq = c.relegationPlayoffTeamCount || 0;
+  if (pos <= up) return 'z-up';
+  if (pos <= up + upq) return 'z-upq';
+  if (pos > total - down) return 'z-down';
+  if (pos > total - down - downq) return 'z-downq';
+  return '';
+}
+function zoneLegend(teamId) {
+  const c = (S.teams[teamId] || {}).table_config || {}, items = [];
+  if (c.promotionTeamCount) items.push(['#1B7F3B', 'Aufstieg']);
+  if (c.promotionPlayoffTeamCount) items.push(['#8FD3A6', 'Aufstiegsrelegation']);
+  if (c.relegationPlayoffTeamCount) items.push(['#F2B26B', 'Abstiegsrelegation']);
+  if (c.relegationTeamCount) items.push(['#B3261E', 'Abstieg']);
+  return items.length ? `<div class="legend">${items.map((x) => `<span><i style="background:${x[0]}"></i>${x[1]}</span>`).join('')}</div>` : '';
+}
+const ltRow = (r, cls, total) => `<tr class="${cls}"><td class="${zoneOf(r.team_id, r.position, total)}">${r.rank ?? r.position}</td><td class="cr">${crest(r.bfv_club_id || (r.is_own ? S.club.bfv_club_id : S.clubByName[r.team_name]), 'sm')}</td><td class="nm" title="${esc(r.team_name)}">${esc(r.team_name)}</td><td>${r.played ?? ''}</td><td>${r.goal_diff ?? ''}</td><td>${r.points ?? ''}</td></tr>`;
 function miniTable(m) {
   const rows = S.tables.filter((r) => r.team_id === m.team_id);
   if (!rows.length) return '<div class="msg">Für diese Mannschaft liegt keine Tabelle vor.</div>';
   const opp = m.is_home ? m.guest_name : m.home_name;
-  const body = rows.map((r) => ltRow(r, r.is_own ? 'own' : r.team_name === opp ? 'opp' : '')).join('');
+  const body = rows.map((r) => ltRow(r, r.is_own ? 'own' : r.team_name === opp ? 'opp' : '', rows.length)).join('');
   const note = rows.some((r) => r.team_name === opp) ? '' : '<div class="small muted">Der Gegner steht nicht in dieser Tabelle (z. B. Pokalspiel).</div>';
-  return `<div class="mini"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>${body}</tbody></table></div>${note}`;
+  return `<div class="mini"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>${body}</tbody></table></div>${zoneLegend(m.team_id)}${note}`;
 }
 const tableToggle = (m) => `<button class="link" data-act="mini" data-id="${m.id}">${S.mini && S.mini[m.id] ? 'Tabelle ausblenden' : 'Tabelle anzeigen'}</button>${S.mini && S.mini[m.id] ? miniTable(m) : ''}`;
 function bonusCard(wk) {
@@ -537,7 +558,7 @@ function viewLiga() {
   const team = S.teams[S.liga];
   let table = '<div class="msg">Für diese Mannschaft liegt noch keine Tabelle vor.</div>';
   if (rows.length) {
-    table = `<div class="scroll"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>` + rows.map((r) => ltRow(r, r.is_own ? 'own' : '')).join('') + '</tbody></table></div>';
+    table = `<div class="scroll"><table class="lt">${LT_COLS}${LT_HEAD}<tbody>` + rows.map((r) => ltRow(r, r.is_own ? 'own' : '', rows.length)).join('') + '</tbody></table></div>' + zoneLegend(S.liga);
   }
   return `<div><h1>Ligatabellen</h1><div class="s13 muted">${esc(team ? team.competition_name || '' : '')}</div></div><div class="pills">${pills}</div>${table}`;
 }
