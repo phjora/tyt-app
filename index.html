@@ -289,16 +289,6 @@ async function saveTip(matchId) {
   if (res.error) console.error(res.error);
   patchTip(matchId);
 }
-async function quickTip() {
-  const todo = weekMatches(S.tipWeek).filter((m) => !started(m) && !m.void && !myTip(m.id));
-  for (const m of todo) {
-    S.tips.push({ match_id: m.id, profile_id: S.session.user.id, home_goals: m.is_home ? 2 : 1, guest_goals: m.is_home ? 1 : 2, _new: true });
-    S.saving[m.id] = 'offen';
-  }
-  render();
-  for (const m of todo) await saveTip(m.id);
-}
-
 // ---------- Ansichten ----------
 function pager(idx, name, current) {
   const key = S.weeks[idx];
@@ -391,8 +381,7 @@ function viewTipp() {
   const ms = weekMatches(S.tipWeek);
   const open = ms.filter((m) => !started(m) && !m.void);
   const tipped = open.filter((m) => myTip(m.id)).length;
-  let html = `<div class="between"><div><h1>Tippen</h1><div class="s13 muted" data-tipsub>${tipSub()}</div></div>
-    ${open.length && tipped < open.length ? '<button class="btn" data-act="quick">Schnelltipp</button>' : ''}</div>` + pager(S.tipWeek, 'tip', S.currentWeek);
+  let html = `<div><h1>Tippen</h1><div class="s13 muted" data-tipsub>${tipSub()}</div></div>` + pager(S.tipWeek, 'tip', S.currentWeek);
   if (S.jokerMsg) html += `<div class="msg">${esc(S.jokerMsg)}</div>`;
   if (!ms.length) html += '<div class="msg">An diesem Spieltag gibt es keine Spiele.</div>';
   for (const m of ms) {
@@ -638,7 +627,6 @@ app.addEventListener('click', async (e) => {
   const a = b.dataset.act, id = b.dataset.id;
   if (a === 'tab') { S.tab = id; render(); window.scrollTo(0, 0); }
   else if (a === 'tip') changeTip(id, b.dataset.side, Number(b.dataset.d));
-  else if (a === 'quick') quickTip();
   else if (a === 'joker') toggleJoker(id);
   else if (a === 'push') {
     const uid = S.session.user.id; let r;
