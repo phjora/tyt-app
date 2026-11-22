@@ -192,16 +192,23 @@ async function loadAll() {
   S.clubByName = {};
   for (const m of matches.data) { if (m.home_bfv_club_id) S.clubByName[m.home_name] = m.home_bfv_club_id; if (m.guest_bfv_club_id) S.clubByName[m.guest_name] = m.guest_bfv_club_id; }
   S.weeks = [...new Set(S.matches.map((m) => weekKey(m.kickoff)))].sort();
-  const now = new Date();
-  const next = S.matches.find((m) => new Date(m.kickoff) > now);
-  S.currentWeek = next ? S.weeks.indexOf(weekKey(next.kickoff)) : S.weeks.length - 1;
-  S.tipWeek = S.currentWeek;
-  const lastStarted = [...S.matches].reverse().find((m) => new Date(m.kickoff) <= now);
-  S.rankWeek = lastStarted ? S.weeks.indexOf(weekKey(lastStarted.kickoff)) : S.currentWeek;
-  const tippedIn = (i) => { const ids = new Set(weekMatches(i).map((m) => m.id)); return S.tips.some((t) => ids.has(t.match_id)); };
-  if (!tippedIn(S.rankWeek)) S.rankWeek = S.currentWeek;
+  pickWeeks(new Date());
   S.liga = S.teamList[0] && S.teamList[0].id;
   applyClubColor();
+}
+// „Aktuell“ ist der Spieltag der laufenden Kalenderwoche (Mo–So), auch wenn schon alle Spiele angepfiffen sind.
+// Gibt es diese Woche keine Spiele, ist es der nächste Spieltag. Der Reiter Tippen öffnet dort, wo es als Nächstes etwas zu tippen gibt.
+function pickWeeks(now) {
+  const thisWeek = weekKey(now.toISOString());
+  let cur = S.weeks.findIndex((w) => w >= thisWeek);
+  if (cur < 0) cur = S.weeks.length - 1;
+  S.currentWeek = cur;
+  const next = S.matches.find((m) => new Date(m.kickoff) > now);
+  S.tipWeek = next ? S.weeks.indexOf(weekKey(next.kickoff)) : cur;
+  const lastStarted = [...S.matches].reverse().find((m) => new Date(m.kickoff) <= now);
+  S.rankWeek = lastStarted ? S.weeks.indexOf(weekKey(lastStarted.kickoff)) : S.tipWeek;
+  const tippedIn = (i) => { const ids = new Set(weekMatches(i).map((m) => m.id)); return S.tips.some((t) => ids.has(t.match_id)); };
+  if (!tippedIn(S.rankWeek)) S.rankWeek = S.tipWeek;
 }
 const tipPts = (t, m) => points(t.home_goals, t.guest_goals, m.home_goals, m.guest_goals) * (t.joker ? 2 : 1);
 const teamsOf = (pid) => S.pteams.filter((x) => x.profile_id === pid).map((x) => x.team_id);
@@ -361,7 +368,7 @@ function pager(idx, name, current) {
   const key = S.weeks[idx];
   return `<div class="pager">
     <button data-act="${name}-prev" aria-label="Vorheriger Spieltag" ${idx <= 0 ? 'disabled' : ''}>‹</button>
-    <div class="mid"><b>Spieltag ${idx + 1}${idx === current ? ' · aktuell' : ''}</b><div class="small muted">${weekLabel(key)}</div></div>
+    <div class="mid"><b>Spieltag ${idx + 1}${idx === current ? ' · aktuell' : idx === current + 1 ? ' · nächster' : ''}</b><div class="small muted">${weekLabel(key)}</div></div>
     <button data-act="${name}-next" aria-label="Nächster Spieltag" ${idx >= S.weeks.length - 1 ? 'disabled' : ''}>›</button>
   </div>`;
 }
