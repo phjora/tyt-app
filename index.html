@@ -89,6 +89,12 @@ td.z-downq{box-shadow:inset 5px 0 0 #F2B26B}td.z-down{box-shadow:inset 5px 0 0 #
 .joker{min-width:72px;padding:0 8px;height:44px;border:2px solid var(--line);border-radius:12px;background:transparent;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
 .joker.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .joker:disabled{opacity:.4}
+table.bt th,table.bt td{padding:6px 8px}
+table.bt .stick{min-width:108px}
+table.bt .who .name{max-width:64px}
+table.bt .who .tot b{font-size:15px}
+table.bt td.hit{font-weight:700;color:var(--accent-text)}
+table.bt td.miss{color:var(--muted)}
 .bar{height:8px;border-radius:4px;background:var(--tint)}.bar>div{height:8px;border-radius:4px;background:var(--accent)}
 .statrow{display:flex;flex-direction:column;gap:4px}.statrow .between{font-size:13px;font-weight:500}
 nav button{font-size:11px}
@@ -221,6 +227,7 @@ function tippedTop(pid, wk, dir) {
   }
   return { teams, margin: best };
 }
+const topShort = (x) => x.teams.length ? x.teams.map((id) => (S.teams[id] || {}).label).join(', ') + ' (' + x.margin + ')' : 'keine';
 const topLabel = (x) => x.teams.length ? x.teams.map((id) => (S.teams[id] || {}).label).join(', ') + ' (' + x.margin + (x.margin === 1 ? ' Tor' : ' Tore') + ')' : 'keine';
 const weekQuestions = (wk) => S.questions.filter((q) => q.scope === 'matchday' && q.matchday === wk);
 const KIND_ORDER = ['matchday_wins', 'biggest_win', 'biggest_loss', 'total_goals', 'duel', 'men_youth'];
@@ -232,27 +239,44 @@ function derive(q, pid) {
   const own = (t) => { const m = byId[t.match_id]; return m.is_home ? [t.home_goals, t.guest_goals] : [t.guest_goals, t.home_goals]; };
   const lab = (id) => (S.teams[id] || {}).label || '?';
   if (q.kind === 'matchday_wins') { const n = tippedWins(pid, wk); return { key: n, text: String(n) }; }
-  if (q.kind === 'biggest_win' || q.kind === 'biggest_loss') { const x = tippedTop(pid, wk, q.kind === 'biggest_win' ? 1 : -1); return { teams: x.teams, text: topLabel(x) }; }
+  if (q.kind === 'biggest_win' || q.kind === 'biggest_loss') { const x = tippedTop(pid, wk, q.kind === 'biggest_win' ? 1 : -1); return { teams: x.teams, text: topLabel(x), short: topShort(x) }; }
   if (q.kind === 'total_goals') { const n = tips.reduce((a, t) => a + t.home_goals + t.guest_goals, 0); return tips.length ? { key: n, text: String(n) } : { key: null, text: '–' }; }
   if (q.kind === 'duel') {
     const p = q.params || {}, g = {};
     for (const t of tips) { const m = byId[t.match_id]; g[m.team_id] = (g[m.team_id] || 0) + own(t)[0]; }
-    if (g[p.a] == null || g[p.b] == null) return { key: null, text: '– (beide Spiele tippen)' };
+    if (g[p.a] == null || g[p.b] == null) return { key: null, text: '– (beide Spiele tippen)', short: '–' };
     const k = g[p.a] > g[p.b] ? 'a' : g[p.a] < g[p.b] ? 'b' : 'equal';
-    return { key: k, text: (k === 'equal' ? 'gleich viele' : lab(k === 'a' ? p.a : p.b)) + ' (' + g[p.a] + ':' + g[p.b] + ')' };
+    return { key: k, text: (k === 'equal' ? 'gleich viele' : lab(k === 'a' ? p.a : p.b)) + ' (' + g[p.a] + ':' + g[p.b] + ')', short: (k === 'equal' ? 'gleich' : lab(k === 'a' ? p.a : p.b)) + ' ' + g[p.a] + ':' + g[p.b] };
   }
   if (q.kind === 'men_youth') {
     const p = q.params || {}, avg = (ids) => { const pts = tips.filter((t) => (ids || []).includes(byId[t.match_id].team_id)).map((t) => { const [f, a] = own(t); return f > a ? 3 : f === a ? 1 : 0; }); return pts.length ? pts.reduce((x, y) => x + y, 0) / pts.length : null; };
     const am = avg(p.men), ay = avg(p.youth);
     if (am == null || ay == null) return { key: null, text: '–' };
     const d = Math.round((am - ay) * 1e6), k = d > 0 ? 'a' : d < 0 ? 'b' : 'equal';
-    return { key: k, text: (k === 'a' ? 'Herren' : k === 'b' ? 'Jugend' : 'gleich') + ' (' + dec(am) + ' : ' + dec(ay) + ')' };
+    const w = k === 'a' ? 'Herren' : k === 'b' ? 'Jugend' : 'gleich';
+    return { key: k, text: w + ' (' + dec(am) + ' : ' + dec(ay) + ')', short: w };
   }
   return { key: null, text: '–' };
 }
 function bonusLabel(q) {
   const lab = (id) => (S.teams[id] || {}).label || '?', p = q.params || {};
   return { matchday_wins: 'Siege', biggest_win: 'Höchster Sieg', biggest_loss: 'Höchste Niederlage', total_goals: 'Tore gesamt (nächster dran)', duel: `Duell ${lab(p.a)} – ${lab(p.b)} (Tore)`, men_youth: 'Herren gegen Jugend (Punkteschnitt)' }[q.kind] || q.title;
+}
+function bonusShortLabel(q) {
+  const lab = (id) => (S.teams[id] || {}).label || '?', p = q.params || {};
+  return { matchday_wins: 'Siege', biggest_win: 'Höchster Sieg', biggest_loss: 'Höchste Niederlage', total_goals: 'Tore gesamt', duel: `${lab(p.a)} – ${lab(p.b)}`, men_youth: 'Herren / Jugend' }[q.kind] || q.title;
+}
+// Alle Trainer in einer Tabelle: eine Zeile je Trainer, eine Spalte je Bonus. Wächst nur um eine Zeile je Trainer.
+function bonusTable(qs) {
+  const uid = S.session.user.id, anyResolved = qs.some((q) => q.resolved);
+  const head = '<th class="stick"><div class="between"><span>Trainer</span><span>Boni</span></div></th>' +
+    qs.map((q) => `<th>${esc(bonusShortLabel(q))}<b>${esc(bonusSolution(q))}</b></th>`).join('');
+  const rows = S.profiles.map((p) => ({ p, cells: qs.map((q) => ({ d: derive(q, p.id), pts: q.resolved ? bonusPts(q, p.id) : null })) }));
+  for (const r of rows) r.sum = r.cells.reduce((a, c) => a + (c.pts || 0), 0);
+  rows.sort((a, b) => b.sum - a.sum || a.p.display_name.localeCompare(b.p.display_name));
+  const body = rows.map((r) => `<tr class="${r.p.id === uid ? 'me' : ''}"><td class="stick" ${r.p.id === uid ? 'style="background:var(--tint)"' : ''}><div class="who"><span class="name">${esc(r.p.display_name)}</span><span class="tot"><b>${anyResolved ? r.sum : '…'}</b></span></div></td>` +
+    r.cells.map((c) => `<td class="${c.pts == null ? '' : c.pts ? 'hit' : 'miss'}">${esc(c.d.short || c.d.text)}${c.pts ? ' ✓' : ''}</td>`).join('') + '</tr>').join('');
+  return `<div class="scroll"><table class="bt"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function bonusSolution(q) {
   const lab = (id) => (S.teams[id] || {}).label || '?', p = q.params || {};
@@ -388,12 +412,10 @@ function bonusCard(wk) {
   let html = `<div class="card" data-bonus style="background:var(--tint)"><div class="small tag">Boni am Wochenende (Fr–So)</div>
     <div class="small muted">Ergeben sich automatisch aus deinen Tipps. Stimmt ein Wert am Ende, gibt es je 1 Punkt. Bei „Tore gesamt“ bekommt ihn, wer am nächsten dran ist.</div>
     <div class="list" style="background:var(--card)">${block(uid)}</div>`;
-  if (anyResolved) html += `<b class="s13">Tatsächlich</b><div class="list" style="background:var(--card)">${qs.map((q) => `<div><span>${esc(bonusLabel(q))}</span><b>${esc(bonusSolution(q))}</b></div>`).join('')}</div>`;
   const skip = skippedIds(wk), skipped = weekendMatches(wk).filter((m) => skip.has(m.id));
   if (skipped.length) html += `<div class="small muted">Nicht eingerechnet, weil das Ergebnis nicht bestätigt wurde: ${skipped.map((m) => esc((S.teams[m.team_id] || {}).label || '?')).join(', ')}.</div>`;
-  if (allStarted) {
-    for (const pr of S.profiles.filter((x) => x.id !== uid)) html += `<b class="s13">${esc(pr.display_name)}</b><div class="list" style="background:var(--card)">${block(pr.id)}</div>`;
-  } else html += '<div class="small muted">Die Boni der anderen siehst du, sobald alle Wochenendspiele angepfiffen sind.</div>';
+  if (allStarted) html += `<b class="s13">Alle Trainer</b><div class="small muted">${anyResolved ? 'In der Kopfzeile steht, was tatsächlich herauskam. ✓ = 1 Punkt. ' : ''}Zur Seite wischen für alle Boni.</div>` + bonusTable(qs);
+  else html += '<div class="small muted">Die Boni der anderen siehst du, sobald alle Wochenendspiele angepfiffen sind.</div>';
   return html + '</div>';
 }
 function tipNote(matchId) {
