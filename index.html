@@ -202,13 +202,16 @@ const teamsOf = (pid) => S.pteams.filter((x) => x.profile_id === pid).map((x) =>
 const isMine = (m) => teamsOf(S.session.user.id).includes(m.team_id);
 const isWeekend = (iso) => { const [y, mo, d] = berlinDay(iso).split('-').map(Number); return [5, 6, 0].includes(new Date(Date.UTC(y, mo - 1, d)).getUTCDay()); };
 const weekendMatches = (wk) => S.matches.filter((m) => weekKey(m.kickoff) === wk && isWeekend(m.kickoff) && !m.void);
+// Spiele, die der Sync bei der Auflösung nicht eingerechnet hat (Ergebnis nie bestätigt)
+const skippedIds = (wk) => new Set(S.questions.filter((q) => q.scope === 'matchday' && q.matchday === wk).flatMap((q) => (q.params && q.params.skipped) || []));
+const bonusMatches = (wk) => { const skip = skippedIds(wk); return weekendMatches(wk).filter((m) => !skip.has(m.id)); };
 function tippedWins(pid, wk) {
-  const ids = new Set(weekendMatches(wk).map((m) => m.id)); const byId = Object.fromEntries(S.matches.map((m) => [m.id, m]));
+  const ids = new Set(bonusMatches(wk).map((m) => m.id)); const byId = Object.fromEntries(S.matches.map((m) => [m.id, m]));
   return S.tips.filter((t) => t.profile_id === pid && ids.has(t.match_id) && (t.home_goals - t.guest_goals) * (byId[t.match_id].is_home ? 1 : -1) > 0).length;
 }
 function tippedTop(pid, wk, dir) {
   // Mannschaft(en) mit dem höchsten getippten Sieg (dir = 1) bzw. der höchsten getippten Niederlage (dir = -1)
-  const byId = Object.fromEntries(weekendMatches(wk).map((m) => [m.id, m]));
+  const byId = Object.fromEntries(bonusMatches(wk).map((m) => [m.id, m]));
   let best = 0, teams = [];
   for (const t of S.tips) {
     const m = byId[t.match_id];
@@ -224,7 +227,7 @@ const KIND_ORDER = ['matchday_wins', 'biggest_win', 'biggest_loss', 'total_goals
 const dec = (x) => x.toFixed(1).replace('.', ',');
 // Was ein Trainer laut seinen Tipps „vorhersagt“: { key: Vergleichswert oder null, text: Anzeige }
 function derive(q, pid) {
-  const wk = q.matchday, ms = weekendMatches(wk), byId = Object.fromEntries(ms.map((m) => [m.id, m]));
+  const wk = q.matchday, ms = bonusMatches(wk), byId = Object.fromEntries(ms.map((m) => [m.id, m]));
   const tips = S.tips.filter((t) => t.profile_id === pid && byId[t.match_id]);
   const own = (t) => { const m = byId[t.match_id]; return m.is_home ? [t.home_goals, t.guest_goals] : [t.guest_goals, t.home_goals]; };
   const lab = (id) => (S.teams[id] || {}).label || '?';
@@ -386,6 +389,8 @@ function bonusCard(wk) {
     <div class="small muted">Ergeben sich automatisch aus deinen Tipps. Stimmt ein Wert am Ende, gibt es je 1 Punkt. Bei „Tore gesamt“ bekommt ihn, wer am nächsten dran ist.</div>
     <div class="list" style="background:var(--card)">${block(uid)}</div>`;
   if (anyResolved) html += `<b class="s13">Tatsächlich</b><div class="list" style="background:var(--card)">${qs.map((q) => `<div><span>${esc(bonusLabel(q))}</span><b>${esc(bonusSolution(q))}</b></div>`).join('')}</div>`;
+  const skip = skippedIds(wk), skipped = weekendMatches(wk).filter((m) => skip.has(m.id));
+  if (skipped.length) html += `<div class="small muted">Nicht eingerechnet, weil das Ergebnis nicht bestätigt wurde: ${skipped.map((m) => esc((S.teams[m.team_id] || {}).label || '?')).join(', ')}.</div>`;
   if (allStarted) {
     for (const pr of S.profiles.filter((x) => x.id !== uid)) html += `<b class="s13">${esc(pr.display_name)}</b><div class="list" style="background:var(--card)">${block(pr.id)}</div>`;
   } else html += '<div class="small muted">Die Boni der anderen siehst du, sobald alle Wochenendspiele angepfiffen sind.</div>';
